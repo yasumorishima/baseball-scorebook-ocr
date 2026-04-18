@@ -14,6 +14,8 @@ data/samples/*.heic
 data/samples/*.pdf
 !data/samples/.gitkeep
 experiments/**/output/
+scripts/inspect-output/
 docs/research/
 .venv/
 __pycache__/
+.scorebook-test-approved

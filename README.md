@@ -30,7 +30,25 @@ Opus 4.7's multimodal + domain-reasoning combination is the first realistic shot
 
 ## Status
 
-Early development. See [experiments/ocr-baseline/](./experiments/ocr-baseline/) for the scorebook OCR accuracy probe — the riskiest part of the project.
+Pre-hackathon scaffolding phase. Design frozen; implementation about to begin.
+
+- [x] **Pre-work complete** (2026-04-19). Sample page analyzed for layout ratios, scorebook school detection strategy chosen, notation fewshot drafted, API parameters locked to Opus 4.7 published limits, cost envelope calculated.
+- [x] **Architecture document** — [docs/architecture.md](./docs/architecture.md), 1,100+ lines covering the full pipeline (preprocessing → school detection → cell extraction → rule-based validation → NPB 9.00 stats → event-sourced DB → RLS-protected multi-tenant sync → capture UX). Single source of truth; revisions go there first, code follows.
+- [x] **Fewshot examples** — [src/ocr/prompts/waseda-fewshot.ts](./src/ocr/prompts/waseda-fewshot.ts), 7 text-based Waseda-shiki notations with explicit schemas (`I3` / `II6-3` / `IIIK` / `B` / `F8` / `犠` / `1B`). Image-based fewshot is deferred to Day 2 after OpenCV cell-boundary calibration.
+- [x] **Layout ratios measured** — 6-iteration visual calibration on a real 2550×3300 scan (Seibido 9104 Waseda). Confirmed portrait file → landscape content (needs 90° rotate), 1 team per page, 9–11 variable batter rows, 13-inning grid. Full ratios in `docs/architecture.md` §20.2.
+- [ ] **Phase A–E implementation** — `src/types/` → `src/preprocess/` → `src/ocr/` → `src/stats/` → `src/pipeline.ts`. No real API calls until Phase E is complete and the gate file `.scorebook-test-approved` is created (see [Safety rails](#safety-rails)).
+
+### Safety rails
+
+To prevent wasted API spend, three PreToolUse hooks are active in the parent Claude Code harness:
+
+- `scorebook-preamble.sh` — injects the full accumulated research (schools, ratios, published Opus limits, cost estimates) into every conversation turn that mentions scorebook OCR, so the assistant cannot re-derive stale assumptions.
+- `block-scorebook-api-call.sh` — refuses `bun run ocr:test` and similar commands unless a repo-local `.scorebook-test-approved` file exists with both `UNLOCK_UNTIL=<ISO datetime>` and `REASON=<string>`. The file is gitignored by default and must be recreated per test session.
+- `block-local-node-run.sh` — refuses any local `bun` / `tsx` / `node <script>` / `npm run` / `vitest` invocation. All execution runs in the project's GitHub Codespace (`gh codespace ssh -c <name> -- 'bash -lc "<cmd>"'`). The local development machine (Celeron N4500) does not support `bun` and is explicitly a scaffolding workstation, not a test host.
+
+These hooks compensate for a prior incident (2026-04-18) where a full-page OCR test was run before the cropping pipeline existed, burning ~$0.91 of a $5 manual top-up on a code path already documented as non-viable. The hook layer makes that mistake mechanically unreachable.
+
+See [experiments/ocr-baseline/](./experiments/ocr-baseline/) for the initial accuracy probe artifacts.
 
 ## Feasibility probe (2026-04-18)
 
