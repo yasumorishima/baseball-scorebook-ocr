@@ -54,10 +54,16 @@ async function main() {
     rects.push(`<line x1="${gx0}" y1="${y}" x2="${gx1}" y2="${y}" stroke="#00aa00" stroke-width="3" opacity="0.6" />`);
   }
 
-  const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">${rects.join("")}</svg>`;
+  const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">${rects.join("")}</svg>`;
+
+  // SVG -> PNG ラスタ化してから base と同一寸法で composite
+  const overlayPng = await sharp(Buffer.from(svg), { density: 72 })
+    .resize(W, H, { fit: "fill" })
+    .png()
+    .toBuffer();
 
   const out = await sharp(rotated)
-    .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
+    .composite([{ input: overlayPng, top: 0, left: 0 }])
     .resize({ width: 1800 })
     .jpeg({ quality: 85 })
     .toBuffer();
