@@ -29,6 +29,12 @@ export async function assessQuality(
 
   const width = info.width;
   const height = info.height;
+  if (info.channels !== 1) {
+    // sharp v0.23+ は grayscale() 後 1ch を保証するが将来版の回帰 guard
+    throw new Error(
+      `assessQuality: expected 1-channel grayscale, got ${info.channels}-channel`,
+    );
+  }
   if (width < 3 || height < 3) {
     throw new Error(
       `assessQuality: image too small (${width}x${height}); need ≥ 3px each side`,

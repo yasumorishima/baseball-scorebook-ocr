@@ -1,6 +1,6 @@
 /**
- * スコアブック版面を論理領域（ヘッダー / 選手列 / イニング列 × N / スタッツ / 合計行 /
- * 投手欄 / 捕手欄）に比率ベースで分割するモジュール。
+ * スコアブック版面を論理領域（page_header / inning_labels / 選手列 / イニング列 × N /
+ * スタッツ / 合計行 / 投手欄 / 捕手欄）に比率ベースで分割するモジュール。
  *
  * 比率定数は docs/architecture.md §20.2（Seibido 9104 waseda、rotated 3300×2550 基準、
  * overlay 6 回反復で確定）と同期。
@@ -39,17 +39,24 @@ export async function cropInnings(
 
   const playerX = Math.round(W * layout.playerColRatio);
   const rightStatsX = Math.round(W * layout.rightStatsRatio);
+  const pageHeaderY = Math.round(H * layout.pageHeaderBottom);
   const headerY = Math.round(H * layout.headerBottom);
   const playGridY = Math.round(H * layout.playGridBottom);
   const totalsY = Math.round(H * layout.totalsRowBottom);
   const pitcherY = Math.round(H * layout.pitcherAreaBottom);
 
   // ── 論理領域の pixel bounds ─────────────────────────────────
-  const headerRect: Rect = {
+  const pageHeaderRect: Rect = {
     x: 0,
     y: 0,
     width: rightStatsX,
-    height: headerY,
+    height: pageHeaderY,
+  };
+  const inningLabelsRect: Rect = {
+    x: playerX,
+    y: pageHeaderY,
+    width: rightStatsX - playerX,
+    height: headerY - pageHeaderY,
   };
   const playerRect: Rect = {
     x: 0,
@@ -97,19 +104,29 @@ export async function cropInnings(
     height: H - totalsY,
   };
 
-  const [header, player, stats, totals, pitcher, catcher, ...innings] =
-    await Promise.all([
-      extract(image, headerRect),
-      extract(image, playerRect),
-      extract(image, statsRect),
-      extract(image, totalsRect),
-      extract(image, pitcherRect),
-      extract(image, catcherRect),
-      ...inningsRects.map((r) => extract(image, r)),
-    ]);
+  const [
+    pageHeader,
+    inningLabels,
+    player,
+    stats,
+    totals,
+    pitcher,
+    catcher,
+    ...innings
+  ] = await Promise.all([
+    extract(image, pageHeaderRect),
+    extract(image, inningLabelsRect),
+    extract(image, playerRect),
+    extract(image, statsRect),
+    extract(image, totalsRect),
+    extract(image, pitcherRect),
+    extract(image, catcherRect),
+    ...inningsRects.map((r) => extract(image, r)),
+  ]);
 
   return {
-    header,
+    pageHeader,
+    inningLabels,
     player,
     innings,
     stats,
@@ -119,7 +136,8 @@ export async function cropInnings(
     meta: {
       imageSize: { width: W, height: H },
       rects: {
-        header: headerRect,
+        pageHeader: pageHeaderRect,
+        inningLabels: inningLabelsRect,
         player: playerRect,
         innings: inningsRects,
         stats: statsRect,
@@ -146,6 +164,7 @@ function validateLayout(layout: ScorebookLayout): void {
   const rs: Array<[string, number]> = [
     ["playerColRatio", layout.playerColRatio],
     ["rightStatsRatio", layout.rightStatsRatio],
+    ["pageHeaderBottom", layout.pageHeaderBottom],
     ["headerBottom", layout.headerBottom],
     ["playGridBottom", layout.playGridBottom],
     ["totalsRowBottom", layout.totalsRowBottom],
@@ -163,13 +182,14 @@ function validateLayout(layout: ScorebookLayout): void {
   }
   if (
     !(
+      layout.pageHeaderBottom < layout.headerBottom &&
       layout.headerBottom < layout.playGridBottom &&
       layout.playGridBottom < layout.totalsRowBottom &&
       layout.totalsRowBottom < layout.pitcherAreaBottom
     )
   ) {
     throw new Error(
-      "cropInnings: y-ratios must satisfy headerBottom < playGridBottom < totalsRowBottom < pitcherAreaBottom",
+      "cropInnings: y-ratios must satisfy pageHeaderBottom < headerBottom < playGridBottom < totalsRowBottom < pitcherAreaBottom",
     );
   }
   if (layout.inningCount < 1 || !Number.isInteger(layout.inningCount)) {
@@ -177,6 +197,7 @@ function validateLayout(layout: ScorebookLayout): void {
       `cropInnings: inningCount must be a positive integer, got ${layout.inningCount}`,
     );
   }
+  // §20.3: 公式 9 人・拡張 10-11 人を想定。上限 15 は preflight guard。
   if (
     layout.batterCount < 1 ||
     layout.batterCount > 15 ||

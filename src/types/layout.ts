@@ -25,7 +25,9 @@ export type ScorebookLayout = {
   playerColRatio: Ratio01;
   /** スタッツ列（x=rightStatsRatio から右端まで） */
   rightStatsRatio: Ratio01;
-  /** ヘッダー下端の y 比率（page_header + inning_labels を含む） */
+  /** page_header（年月日・試合情報・チーム名）下端の y 比率 */
+  pageHeaderBottom: Ratio01;
+  /** inning_labels（"1 2 3 ... 13"）下端の y 比率 = play_grid 上端 */
   headerBottom: Ratio01;
   /** play_grid 下端の y 比率（totals_row 上端 = play_grid 下端） */
   playGridBottom: Ratio01;
@@ -46,11 +48,13 @@ export type ScorebookLayout = {
 export const SEIBIDO_9104_WASEDA: ScorebookLayout = {
   playerColRatio: 0.135,
   rightStatsRatio: 0.770,
+  pageHeaderBottom: 0.080,
   headerBottom: 0.160,
   playGridBottom: 0.520,
   totalsRowBottom: 0.570,
   pitcherAreaBottom: 0.830,
   inningCount: 13,
+  /** 草野球・練習試合で 10〜11 人打線あり得る（§20.3）。9 人制公式戦は 9、拡張は 10〜11 で切替。 */
   batterCount: 10,
 };
 
@@ -70,8 +74,10 @@ export const SEIBIDO_9104_WASEDA_9: ScorebookLayout = {
  * innings は左から右の順で並ぶ。
  */
 export type InningCropResult = {
-  /** ヘッダー行（年月日・試合情報・イニング番号） */
-  header: Buffer;
+  /** page_header（年月日・試合情報・審判・チーム名、§20.2 の y 0-0.080） */
+  pageHeader: Buffer;
+  /** inning_labels（"1 2 3 ... 13" 数字行、§20.2 の y 0.080-0.160） */
+  inningLabels: Buffer;
   /** 打順・選手列 */
   player: Buffer;
   /** 各イニング列（左から右） */
@@ -88,7 +94,8 @@ export type InningCropResult = {
   meta: {
     imageSize: { width: number; height: number };
     rects: {
-      header: Rect;
+      pageHeader: Rect;
+      inningLabels: Rect;
       player: Rect;
       innings: Rect[];
       stats: Rect;

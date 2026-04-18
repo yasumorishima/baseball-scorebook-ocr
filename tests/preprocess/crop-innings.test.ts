@@ -50,20 +50,28 @@ describe("cropInnings (SEIBIDO_9104_WASEDA defaults)", () => {
     const result = await cropInnings(img);
     const { rects } = result.meta;
 
-    // 既定比率: player 0-0.135, stats 0.770-1.0, header 0-0.160,
-    // playGrid 0.160-0.520, totals 0.520-0.570, pitcher 0.570-0.830
+    // 既定比率: player 0-0.135, stats 0.770-1.0, pageHeader 0-0.080,
+    // inningLabels 0.135-0.770 × 0.080-0.160, playGrid 0.160-0.520,
+    // totals 0.520-0.570, pitcher 0.570-0.830
     const playerX = Math.round(LANDSCAPE_W * 0.135); // 446
     const statsX = Math.round(LANDSCAPE_W * 0.77); // 2541
+    const pageHeaderY = Math.round(LANDSCAPE_H * 0.08); // 204
     const headerY = Math.round(LANDSCAPE_H * 0.16); // 408
     const playY = Math.round(LANDSCAPE_H * 0.52); // 1326
     const totalsY = Math.round(LANDSCAPE_H * 0.57); // 1454 (1453.5 round)
     const pitcherY = Math.round(LANDSCAPE_H * 0.83); // 2117
 
-    expect(rects.header).toEqual({
+    expect(rects.pageHeader).toEqual({
       x: 0,
       y: 0,
       width: statsX,
-      height: headerY,
+      height: pageHeaderY,
+    });
+    expect(rects.inningLabels).toEqual({
+      x: playerX,
+      y: pageHeaderY,
+      width: statsX - playerX,
+      height: headerY - pageHeaderY,
     });
     expect(rects.player).toEqual({
       x: 0,
@@ -134,7 +142,11 @@ describe("cropInnings (SEIBIDO_9104_WASEDA defaults)", () => {
     const img = await canvas(LANDSCAPE_W, LANDSCAPE_H);
     const result = await cropInnings(img);
 
-    await expectRectMatchesBuffer(result.meta.rects.header, result.header);
+    await expectRectMatchesBuffer(result.meta.rects.pageHeader, result.pageHeader);
+    await expectRectMatchesBuffer(
+      result.meta.rects.inningLabels,
+      result.inningLabels,
+    );
     await expectRectMatchesBuffer(result.meta.rects.player, result.player);
     await expectRectMatchesBuffer(result.meta.rects.stats, result.stats);
     await expectRectMatchesBuffer(result.meta.rects.totals, result.totals);
@@ -160,7 +172,8 @@ describe("cropInnings (SEIBIDO_9104_WASEDA defaults)", () => {
     const areaOf = (r: Rect) => r.width * r.height;
     const playGridArea = rects.innings.reduce((s, r) => s + areaOf(r), 0);
     const total =
-      areaOf(rects.header) +
+      areaOf(rects.pageHeader) +
+      areaOf(rects.inningLabels) +
       areaOf(rects.player) +
       playGridArea +
       areaOf(rects.stats) +
@@ -176,7 +189,8 @@ describe("cropInnings (SEIBIDO_9104_WASEDA defaults)", () => {
 
     // 領域同士が重ならないこと（pair-wise 確認）
     const allRects: Rect[] = [
-      rects.header,
+      rects.pageHeader,
+      rects.inningLabels,
       rects.player,
       ...rects.innings,
       rects.stats,

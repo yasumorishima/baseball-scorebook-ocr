@@ -41,7 +41,13 @@ export async function normalize(
     throw new Error("normalize: could not read image dimensions");
   }
 
-  let pipeline = sharp(input).rotate(options.forceRotate ?? undefined);
+  // sharp 0.33 系では `.rotate()` 無引数 = EXIF auto-orient、`.rotate(90)` = 強制回転。
+  // 将来版（1.0+）で `.rotate(undefined)` の挙動が変わる可能性があるため明示的に分岐。
+  let pipeline = sharp(input);
+  pipeline =
+    options.forceRotate != null
+      ? pipeline.rotate(options.forceRotate)
+      : pipeline.rotate();
   pipeline = pipeline.resize({
     width: longEdge,
     height: longEdge,

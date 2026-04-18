@@ -87,4 +87,23 @@ describe("normalize", () => {
   it("throws on unreadable input", async () => {
     await expect(() => normalize(Buffer.from("not an image"))).rejects.toThrow();
   });
+
+  it("auto-rotates per EXIF orientation=6 (90° CW) by default", async () => {
+    // EXIF Orientation=6 = カメラが 90° 右回転で保存、復元時に 90° 左回転必要
+    // sharp().rotate() は EXIF を読んで自動回転する
+    const landscapeRaw = await sharp({
+      create: { width: 1200, height: 800, channels: 3, background: { r: 50, g: 100, b: 150 } },
+    })
+      .withMetadata({ orientation: 6 })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+
+    const out = await normalize(landscapeRaw);
+    // EXIF=6 で 1200×800 の素材を保存 → 復元後は 800×1200 の portrait
+    // origSize は元データ（1200×800）または sharp の EXIF 補正後値がプラットフォーム依存。
+    // 重要なのは sentSize が EXIF を反映していること:
+    // 長辺が Math.max(1200, 800) = 1200 < 2576 なので resize 無効、回転後サイズ 800×1200
+    expect(out.sentSize.height).toBeGreaterThan(out.sentSize.width);
+    expect(out.sentSize).toEqual({ width: 800, height: 1200 });
+  });
 });
