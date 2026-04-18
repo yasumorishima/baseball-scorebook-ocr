@@ -30,7 +30,7 @@ async function prepareImage(imagePath: string) {
   const input = readFileSync(imagePath);
   const origMeta = await sharp(input).metadata();
   const buf = await sharp(input)
-    .autoOrient()
+    .rotate()
     .resize({ width: MAX_LONG_EDGE, height: MAX_LONG_EDGE, fit: "inside", withoutEnlargement: true })
     .jpeg({ quality: 90, mozjpeg: true })
     .toBuffer();
