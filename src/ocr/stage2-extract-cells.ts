@@ -92,7 +92,10 @@ export async function extractStage2Columns(
   const buildUserText = selectUserTextBuilder(effectiveStyle);
   const toolName = selectToolName(effectiveStyle);
 
-  return runWithConcurrency(columns, concurrency, async (col) => {
+  const raw = await runWithConcurrency<
+    Stage2Input,
+    Stage2ColumnResult | ClaudeDryRunResult
+  >(columns, concurrency, async (col) => {
     const upscaled = await upscaleColumn(col.columnImage, minLongEdge);
     const result = await callClaude<unknown>(
       {
@@ -109,7 +112,7 @@ export async function extractStage2Columns(
       options,
     );
     if ("dryRun" in result) {
-      return result as ClaudeDryRunResult;
+      return result;
     }
     const parsed = Stage2ColumnResponseSchema.parse(result.toolInput);
     return {
@@ -120,6 +123,12 @@ export async function extractStage2Columns(
       attempts: result.attempts,
     } satisfies Stage2ColumnResult;
   });
+
+  // dryRun フラグは全 call に一律適用される前提 → 結果は homogeneous
+  if (raw.length > 0 && "dryRun" in raw[0]) {
+    return raw as ClaudeDryRunResult[];
+  }
+  return raw as Stage2ColumnResult[];
 }
 
 export async function upscaleColumn(
