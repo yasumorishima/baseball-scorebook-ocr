@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { basename, dirname, extname, resolve } from "node:path";
-import { SCOREBOOK_SYSTEM_PROMPT } from "./prompts/system.ts";
+import { SCOREBOOK_SYSTEM_PROMPT } from "./prompts/system.js";
 
 const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-7";
 const MAX_LONG_EDGE = 2576;
