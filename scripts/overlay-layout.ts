@@ -21,9 +21,14 @@ const BATTER_COUNT = 10;
 async function main() {
   const input = process.argv[2] ?? "data/samples/20260412131943_001.jpg";
   const buf = readFileSync(resolve(input));
-  const rotated = await sharp(buf).rotate(90).toBuffer();
-  const meta = await sharp(rotated).metadata();
-  const W = meta.width!, H = meta.height!;
+  // rotate AND resize to a fixed target, keeping aspect ratio. SVG overlay will be rasterized to the same size.
+  const rawRotated = await sharp(buf).rotate(90).toBuffer();
+  const rawMeta = await sharp(rawRotated).metadata();
+  const rawW = rawMeta.width!, rawH = rawMeta.height!;
+  const TARGET_W = 1800;
+  const TARGET_H = Math.round((TARGET_W * rawH) / rawW);
+  const base = await sharp(rawRotated).resize(TARGET_W, TARGET_H, { fit: "fill" }).jpeg({ quality: 90 }).toBuffer();
+  const W = TARGET_W, H = TARGET_H;
 
   const rects: string[] = [];
   for (const r of REGIONS) {
@@ -56,21 +61,19 @@ async function main() {
 
   const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">${rects.join("")}</svg>`;
 
-  // SVG -> PNG ラスタ化してから base と同一寸法で composite
-  const overlayPng = await sharp(Buffer.from(svg), { density: 72 })
+  const overlayPng = await sharp(Buffer.from(svg))
     .resize(W, H, { fit: "fill" })
     .png()
     .toBuffer();
 
-  const out = await sharp(rotated)
+  const out = await sharp(base)
     .composite([{ input: overlayPng, top: 0, left: 0 }])
-    .resize({ width: 1800 })
     .jpeg({ quality: 85 })
     .toBuffer();
 
   const outPath = resolve("scripts/inspect-output", "overlay-layout.jpg");
   writeFileSync(outPath, out);
-  console.log(`overlay written: ${outPath} (source ${W}x${H}, resized to width 1800)`);
+  console.log(`overlay written: ${outPath} (base ${W}x${H})`);
   console.log(`regions: ${REGIONS.map((r) => r.name).join(", ")}`);
   console.log(`play_grid: ${INNING_COUNT} innings x ${BATTER_COUNT} batters`);
 }
