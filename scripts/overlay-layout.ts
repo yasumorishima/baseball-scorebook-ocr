@@ -1,0 +1,75 @@
+import sharp from "sharp";
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+// Seibido 9104 waseda 推定比率 (2026-04-19 visual 計測)
+// 座標はすべて 90deg 回転後の landscape 画像基準 (3300x2550)
+type Region = { name: string; x: [number, number]; y: [number, number]; color: string };
+
+const REGIONS: Region[] = [
+  { name: "header",        x: [0.000, 1.000], y: [0.000, 0.089], color: "#ff0000" },
+  { name: "player_col",    x: [0.000, 0.088], y: [0.089, 0.356], color: "#0000ff" },
+  { name: "play_grid",     x: [0.088, 0.669], y: [0.089, 0.356], color: "#00aa00" },
+  { name: "totals_row",    x: [0.088, 0.669], y: [0.356, 0.390], color: "#ff8800" },
+  { name: "pitcher_area",  x: [0.000, 0.669], y: [0.390, 0.700], color: "#8800ff" },
+  { name: "right_stats",   x: [0.669, 1.000], y: [0.000, 1.000], color: "#888888" },
+];
+
+const INNING_COUNT = 13;
+const BATTER_COUNT = 10;
+
+async function main() {
+  const input = process.argv[2] ?? "data/samples/20260412131943_001.jpg";
+  const buf = readFileSync(resolve(input));
+  const rotated = await sharp(buf).rotate(90).toBuffer();
+  const meta = await sharp(rotated).metadata();
+  const W = meta.width!, H = meta.height!;
+
+  const rects: string[] = [];
+  for (const r of REGIONS) {
+    const x = Math.round(r.x[0] * W);
+    const y = Math.round(r.y[0] * H);
+    const w = Math.round((r.x[1] - r.x[0]) * W);
+    const h = Math.round((r.y[1] - r.y[0]) * H);
+    rects.push(
+      `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${r.color}" stroke-width="8" opacity="0.85" />`,
+    );
+    rects.push(
+      `<text x="${x + 10}" y="${y + 40}" fill="${r.color}" font-size="36" font-family="sans-serif" font-weight="bold">${r.name}</text>`,
+    );
+  }
+
+  // 内部グリッド: play_grid を 13 イニング × 10 打順に分割
+  const pg = REGIONS.find((r) => r.name === "play_grid")!;
+  const gx0 = pg.x[0] * W, gx1 = pg.x[1] * W;
+  const gy0 = pg.y[0] * H, gy1 = pg.y[1] * H;
+  const iw = (gx1 - gx0) / INNING_COUNT;
+  const bh = (gy1 - gy0) / BATTER_COUNT;
+  for (let i = 1; i < INNING_COUNT; i++) {
+    const x = gx0 + i * iw;
+    rects.push(`<line x1="${x}" y1="${gy0}" x2="${x}" y2="${gy1}" stroke="#00aa00" stroke-width="3" opacity="0.6" />`);
+  }
+  for (let b = 1; b < BATTER_COUNT; b++) {
+    const y = gy0 + b * bh;
+    rects.push(`<line x1="${gx0}" y1="${y}" x2="${gx1}" y2="${y}" stroke="#00aa00" stroke-width="3" opacity="0.6" />`);
+  }
+
+  const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">${rects.join("")}</svg>`;
+
+  const out = await sharp(rotated)
+    .composite([{ input: Buffer.from(svg), top: 0, left: 0 }])
+    .resize({ width: 1800 })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+
+  const outPath = resolve("scripts/inspect-output", "overlay-layout.jpg");
+  writeFileSync(outPath, out);
+  console.log(`overlay written: ${outPath} (source ${W}x${H}, resized to width 1800)`);
+  console.log(`regions: ${REGIONS.map((r) => r.name).join(", ")}`);
+  console.log(`play_grid: ${INNING_COUNT} innings x ${BATTER_COUNT} batters`);
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
