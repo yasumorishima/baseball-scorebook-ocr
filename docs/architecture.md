@@ -882,3 +882,93 @@ const constraints = {
 | 日付 | 変更 |
 |---|---|
 | 2026-04-18 | 初版。Deep Research 3 弾＋事前検証の全項目を 1 本に統合。 |
+| 2026-04-19 | v2: 既存サンプル visual 計測で版面比率・向き・打順可変性を確定。Section 4.1/4.4/5/13 を実測ベースに更新。Few-shot はテキストベースで Day 1 運用、画像ベースは Day 2 で opencv 自動校正後。 |
+
+---
+
+## 20. v2 確定事項（2026-04-19 事前調査反映）
+
+### 20.1 画像の向きと版面
+
+- ファイル保存向き: **portrait 2550×3300、EXIF orientation なし**
+- 実内容は **landscape 向き**、sharp().rotate(90) で 3300×2550 に変換必須
+- Opus 4.7 が丸ごと投入時に "sideways/rotated" と訴えた真因
+
+### 20.2 Seibido 9104 waseda 版面比率（rotated 3300×2550 基準、overlay 6 回反復で確定）
+
+| 領域 | x 範囲 | y 範囲 | 備考 |
+|---|---|---|---|
+| page_header | 0.000〜0.770 | 0.000〜0.080 | 年月日・試合情報・審判・チーム名 |
+| inning_labels | 0.135〜0.770 | 0.080〜0.160 | "1 2 3 ... 13" 数字 + マージン |
+| player_col | 0.000〜0.135 | 0.160〜0.520 | 打順・シート・背番号・選手名 |
+| **play_grid** | **0.135〜0.770** | **0.160〜0.520** | **13 inning × 10 batter** |
+| totals_row | 0.135〜0.770 | 0.520〜0.570 | 安・失・四 合計行 |
+| pitcher_area | 0.000〜0.770 | 0.570〜0.830 | 投手記録 4 枠 |
+| catcher_area | 0.770〜1.000 | 0.570〜1.000 | 捕手・長打欄 |
+| right_stats | 0.770〜1.000 | 0.000〜0.570 | 打点・失策・犠打・犠飛・三塁打・本塁打 |
+
+- 各イニング列 native: 161 × 1051 px、各セル native: 161 × 96 px
+- Opus 4.7 最小 200px 規定のため**送信時に 300px 以上へ upscale 必須**
+- cell 単位の pixel-perfect 切り出しは Day 2 で `@techstark/opencv-js` Hough ライン検出で自動校正
+
+### 20.3 打順数の可変性
+
+- 公式戦: 9 人打線 + DH で実質 10 人
+- **草野球・練習試合で全員打たせたい場合: 10〜11 人打線もあり得る**（ユーザー補足）
+- batter_count は 9〜11 の可変設計、Seibido 9104 既定は 10 行枠
+- 超過時は裏面・別ページに継続記録される（実装時は 1 試合 = 複数ページもサポート）
+
+### 20.4 1 ページ = 1 チーム（攻撃側のみ）
+
+- 相手チームは別ページに記録
+- アプリ側で `game_id` リンクで両軍統合
+- OCR パイプラインは 1 ページ単位、集計は event sourcing 層で game 単位に reduce
+
+### 20.5 Stage 1 unknown fallback（Task #10 結論）
+
+- Stage 1 流派判別が `unknown` を返した場合、または `confidence < 0.5`:
+  - **Day 1**: waseda をデフォルトに使用、warning ログ出力
+  - **Day 2**: UI モーダル「流派判別不能、手動で選択してください」＋ waseda/keio/chiba ラジオボタン
+
+### 20.6 Stage 2 戦略変更（per-inning column crops）
+
+- 当初は「per-cell crop を 130 枚投入」を検討
+- **変更後**: 13 本のイニング列 crop（161×1051 native、upscale して送信）を Stage 2 に投入
+- 各呼び出しで 1 イニング分の 10 セルを Opus が一括 OCR
+- per-cell crop は Day 2 の低信頼セル retry 時のみ使用
+
+### 20.7 Few-shot は Day 1 テキストベース
+
+- 画像ベース Few-shot は cell crop のピクセル精度が不十分のため Day 2 に延期
+- Day 1: `src/ocr/prompts/waseda-fewshot.ts` にテキストベース 7 例
+  1. `I3` — 1st out groundout to 1B
+  2. `II6-3` — 2nd out SS→1B chain
+  3. `IIIK` — 3rd out strikeout swinging
+  4. `B` — walk（waseda 単文字、keio は BB）
+  5. `F8` — flyout to CF
+  6. `犠` — sac bunt（waseda/keio 反対警告付き）
+  7. `1B` — single
+- `renderFewshotBlock()` で `<example>` XML タグ埋め込み
+
+### 20.8 投手ログ・守備交代（Task #9 結論）
+
+- 投手記録欄 17 列ヘッダー確認済み: 勝負セーブ / 投球回数 /3 / 打者 / 打数 / 投球数 / 安打 / 本塁打 / 犠打 / 犠飛 / 四球 / 死球 / 三振 / 暴投 / ボーク / 失点 / 自責点
+- 投手枠 4 行（最大 4 人継投）
+- **守備交代は play_grid セル内手書き** → OCR は困難、UI で `event_type: substitution` 手動入力設計
+- 投手の交代タイミング: 投手記録欄の投球回数列で暗黙的に表現、アプリ側で accumulation
+
+### 20.9 関連メモリ
+
+- `project_hackathon-opus47-scorebook.md` — ハッカソン応募情報
+- `project_scorebook-layout.md` — 版面実測値と運用補足（本文 v2 と同期）
+- `feedback_ocr-single-image-focus.md` — 1 枚精度評価原則
+- `feedback_respect-prior-verification.md` — 検証済み方針を無視しない
+- `feedback_no-premature-api-test.md` — 完全実装前の API テスト禁止
+
+### 20.10 スクリプト資産（事前調査）
+
+- `scripts/inspect-sample.ts` — 4 向き回転で正しい向き判定
+- `scripts/overlay-layout.ts` — 版面比率 SVG overlay 検証
+- `scripts/crop-innings-preview.ts` — 13 イニング列切り出し検証
+- `scripts/crop-play-grid.ts` — play_grid 領域確認
+- `scripts/crop-cells.ts` — 個別セル切り出し（Day 2 要 opencv 校正）
