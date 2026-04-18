@@ -2,7 +2,8 @@
   "name": "baseball-scorebook-ocr",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
   "features": {
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/sshd:1": {}
   },
   "postCreateCommand": "npm install -g bun && bun install",
   "customizations": {
