@@ -3,8 +3,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const LAYOUT = {
-  playerColRatio: 0.089,
-  rightStatsRatio: 0.683,
+  playerColRatio: 0.180,
+  rightStatsRatio: 0.770,
   headerBottom: 0.080,
   playGridBottom: 0.226,
   inningCount: 13,
