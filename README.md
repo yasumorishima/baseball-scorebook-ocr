@@ -110,6 +110,73 @@ System prompt + school-specific few-shot examples are identical across every cel
 
 These are areas where we need to publish our own numbers.
 
+## Stats calculation rules (2026-04-18 research)
+
+Japanese amateur baseball statistics follow the same definitions as MLB, standardized in NPB's **Official Baseball Rules 9.00** (記録に関する規則). `pybaseball` / `sabr`-style AVG / OBP / SLG / ERA / WHIP formulas apply unchanged. Primary sources:
+
+- NPB calculation method: https://npb.jp/scoring/calculation.html
+- NPB Rules 9.00 (PDF): https://npb.jp/scoring/officialrule_900.pdf
+- BFJ 2026 amateur internal regulations: https://baseballjapan.org/jpn/uploaded_data/bfj_news/doc/0964/2026AmateurBaseballInternalRegulations.pdf
+
+### The OBP-drops-on-reaching-base gotcha
+
+A handful of outcomes put the batter on base but *lower* their on-base percentage. This is correct per rule 9.05(b) / 9.02(a)(1) but surprises amateur users. The app will surface this with an inline tooltip linking to the relevant rule.
+
+| Outcome | AB | Hit | AVG | OBP |
+|---|---|---|---|---|
+| Strikeout + reached on passed ball/wild pitch (振り逃げ出塁) | +1 | no | ↓ | **↓** |
+| Fielder's choice (FC) | +1 | no | ↓ | ↓ |
+| Reached on error | +1 | no | ↓ | ↓ |
+| Sacrifice bunt with all safe on fielder's choice | 0 | no | — | — |
+| Catcher's interference (打撃妨害) reaching 1B | 0 | no | — | — |
+| Obstruction (走塁妨害) reaching 1B | 0 | no | — | — |
+
+OBP formula: `(H + BB + HBP) / (AB + BB + HBP + SF)`. Sacrifice flies count in the denominator; sacrifice bunts do not.
+
+### Required OCR fields for downstream stats
+
+Per-plate-appearance fields the pipeline must surface to support full stats aggregation: `AB, H, 2B, 3B, HR, BB, HBP, SH, SF, SO, CatcherInterference, Obstruction, FC, E, strikeout-but-reached`.
+
+### IP (innings pitched) notation
+
+Japanese official scoring requires the "5回2/3" fractional form (rule 9.02(c)(1) 原注). One out = 1/3 inning. Internal storage uses integer outs to avoid floating-point drift; display renders as fractions.
+
+## Preprocessing stack (decided, not yet installed)
+
+All libraries are MIT or Apache-2.0 — safe for an MIT-licensed repo with possible future monetization.
+
+| Library | Role | License |
+|---|---|---|
+| [sharp](https://github.com/lovell/sharp) | EXIF auto-orient, resize to 2576px long edge, JPEG q90 (mozjpeg) | Apache-2.0 |
+| [jscanify](https://github.com/puffinsoft/jscanify) | Paper-quadrilateral detection + perspective unwarp | MIT |
+| [@techstark/opencv-js](https://github.com/TechStark/opencv-js) | Homography fallback when jscanify misses (TypeScript-typed) | Apache-2.0 |
+| [react-webcam](https://github.com/mozmorris/react-webcam) | PWA camera capture with live scanner overlay | MIT |
+| [tesseract.js](https://github.com/naptha/tesseract.js) | OSD rotation probe as a secondary orientation signal | Apache-2.0 |
+
+Explicitly excluded: `opencv4nodejs` (native bindings incompatible with Vercel / serverless / bun).
+
+### Why EXIF normalization is not optional
+
+Claude's vision documentation does not guarantee automatic EXIF orientation handling, and explicitly warns that "Claude may hallucinate or make mistakes when interpreting low-quality, *rotated*, or very small images." Every upload therefore passes through `sharp().autoOrient()` server-side before any other operation.
+
+`sharp` alone handles affine transforms (2×2 matrix). The perspective correction needed for hand-held phone shots of a flat scorebook is a 3×3 homography, which requires OpenCV.js — hence the jscanify / @techstark split.
+
+### Resize target
+
+Opus 4.7's vision encoder processes up to 2576 px on the long edge (≈4784 tokens per image). Sonnet and Haiku cap at 1568 px, which crushes dense-grid detail. Upscaling past 2576 wastes money without improving accuracy, so we resize *down* to 2576 before upload.
+
+Estimated API cost at this size: roughly $0.02 per scoresheet page on a single extraction call, before prompt caching. With cached system + few-shot prefix, subsequent calls are ~90% cheaper.
+
+## Few-shot sample sourcing
+
+NPB and Seibido do not publish downloadable example PDFs, and NPB's terms explicitly forbid reuse of their images. The legally-safe options are:
+
+1. **Self-scanned**: purchase a Seibido 9104 scorebook (¥1,080, A4, 30 games) and fill it with fabricated names and play sequences, then scan at 300 DPI. This is the highest-fidelity route for matching real user uploads.
+2. **Synthetic**: generate blank-grid SVG + composite Waseda-shiki symbols with `sharp` or `node-canvas`. Zero legal risk, but doesn't capture handwriting drift / paper tone / ink variation.
+3. **Hybrid**: ~80% synthetic + ~20% self-scanned. Keeps marginal cost low while retaining in-distribution realism.
+
+The notation system itself (idea / scoring convention) is not copyrightable under Japanese law, but a specific printed layout may qualify as a compiled work. Self-generating the grid from SVG sidesteps this entirely.
+
 ## Development
 
 All development runs in **GitHub Codespaces** — see [docs/codespace-setup.md](./docs/codespace-setup.md). The devcontainer installs bun + dependencies automatically; scorebook images go into `data/samples/` (gitignored — real scorebooks contain player names).
