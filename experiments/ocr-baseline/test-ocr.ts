@@ -1,9 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
+import sharp from "sharp";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { basename, dirname, extname, resolve } from "node:path";
 import { SCOREBOOK_SYSTEM_PROMPT } from "./prompts/system.ts";
 
 const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-4-7";
+const MAX_LONG_EDGE = 2576;
 
 type CellRead = {
   batting_order: number;
@@ -24,12 +26,22 @@ type OcrResponse = {
   };
 };
 
-function mimeFromPath(path: string): "image/jpeg" | "image/png" | "image/webp" | "image/gif" {
-  const ext = extname(path).toLowerCase();
-  if (ext === ".png") return "image/png";
-  if (ext === ".webp") return "image/webp";
-  if (ext === ".gif") return "image/gif";
-  return "image/jpeg";
+async function prepareImage(imagePath: string) {
+  const input = readFileSync(imagePath);
+  const origMeta = await sharp(input).metadata();
+  const buf = await sharp(input)
+    .autoOrient()
+    .resize({ width: MAX_LONG_EDGE, height: MAX_LONG_EDGE, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 90, mozjpeg: true })
+    .toBuffer();
+  const outMeta = await sharp(buf).metadata();
+  return {
+    base64: buf.toString("base64"),
+    media_type: "image/jpeg" as const,
+    origSize: { width: origMeta.width ?? 0, height: origMeta.height ?? 0 },
+    sentSize: { width: outMeta.width ?? 0, height: outMeta.height ?? 0 },
+    sentBytes: buf.byteLength,
+  };
 }
 
 async function runOcr(imagePath: string) {
@@ -41,33 +53,43 @@ async function runOcr(imagePath: string) {
     throw new Error("ANTHROPIC_API_KEY env var is required");
   }
 
-  const buf = readFileSync(imagePath);
-  const base64 = buf.toString("base64");
-  const media_type = mimeFromPath(imagePath);
+  const prepStart = Date.now();
+  const img = await prepareImage(imagePath);
+  const prepMs = Date.now() - prepStart;
+  console.log(
+    `prep: ${img.origSize.width}x${img.origSize.height} -> ${img.sentSize.width}x${img.sentSize.height} (${(img.sentBytes / 1024).toFixed(0)} KB) in ${prepMs}ms`,
+  );
 
   const client = new Anthropic({ apiKey });
-  const start = Date.now();
+  const apiStart = Date.now();
   const res = await client.messages.create({
     model: MODEL,
-    max_tokens: 8000,
-    system: SCOREBOOK_SYSTEM_PROMPT,
+    max_tokens: 16000,
+    temperature: 0,
+    system: [
+      {
+        type: "text",
+        text: SCOREBOOK_SYSTEM_PROMPT,
+        cache_control: { type: "ephemeral" },
+      },
+    ],
     messages: [
       {
         role: "user",
         content: [
           {
             type: "image",
-            source: { type: "base64", media_type, data: base64 },
+            source: { type: "base64", media_type: img.media_type, data: img.base64 },
           },
           {
             type: "text",
-            text: "Read this scorebook page and return the JSON specified in the system prompt. Include all cells, marking blanks as null.",
+            text: "Read this scorebook page and return the JSON specified in the system prompt. Include all cells, marking blanks as null. Output strict JSON only, no prose.",
           },
         ],
       },
     ],
   });
-  const elapsedMs = Date.now() - start;
+  const apiMs = Date.now() - apiStart;
 
   const text = res.content
     .filter((c): c is Anthropic.TextBlock => c.type === "text")
@@ -90,14 +112,21 @@ async function runOcr(imagePath: string) {
   mkdirSync(outDir, { recursive: true });
   const stem = basename(imagePath, extname(imagePath));
 
+  const usage = res.usage as Anthropic.Usage & {
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
+  const tokenLine = `model=${MODEL} prep_ms=${prepMs} api_ms=${apiMs} input=${usage.input_tokens} output=${usage.output_tokens} cache_create=${usage.cache_creation_input_tokens ?? 0} cache_read=${usage.cache_read_input_tokens ?? 0}`;
+  console.log(tokenLine);
+
   writeFileSync(
     resolve(outDir, `${stem}.raw.txt`),
-    text + `\n\n---\nmodel=${MODEL} elapsed_ms=${elapsedMs} input_tokens=${res.usage.input_tokens} output_tokens=${res.usage.output_tokens}\n`,
+    text + `\n\n---\n${tokenLine}\nsent_size=${img.sentSize.width}x${img.sentSize.height} sent_bytes=${img.sentBytes}\n`,
   );
 
   if (parsed) {
     writeFileSync(resolve(outDir, `${stem}.json`), JSON.stringify(parsed, null, 2));
-    writeFileSync(resolve(outDir, `${stem}.md`), renderMarkdown(stem, parsed, elapsedMs, res.usage));
+    writeFileSync(resolve(outDir, `${stem}.md`), renderMarkdown(stem, parsed, apiMs, usage, img));
     summarize(parsed);
   } else {
     console.error("No parseable JSON — see .raw.txt for model output.");
@@ -105,7 +134,13 @@ async function runOcr(imagePath: string) {
   }
 }
 
-function renderMarkdown(stem: string, r: OcrResponse, ms: number, usage: { input_tokens: number; output_tokens: number }) {
+function renderMarkdown(
+  stem: string,
+  r: OcrResponse,
+  ms: number,
+  usage: Anthropic.Usage & { cache_creation_input_tokens?: number; cache_read_input_tokens?: number },
+  img: { origSize: { width: number; height: number }; sentSize: { width: number; height: number }; sentBytes: number },
+) {
   const nonNull = r.cells.filter((c) => c.raw_notation != null);
   const byConf = {
     high: nonNull.filter((c) => c.confidence >= 0.8).length,
@@ -126,8 +161,10 @@ function renderMarkdown(stem: string, r: OcrResponse, ms: number, usage: { input
   return `# OCR result: ${stem}
 
 **Model**: \`${MODEL}\`
-**Elapsed**: ${ms} ms
-**Tokens**: in=${usage.input_tokens}, out=${usage.output_tokens}
+**API elapsed**: ${ms} ms
+**Original**: ${img.origSize.width}×${img.origSize.height}
+**Sent**: ${img.sentSize.width}×${img.sentSize.height} (${(img.sentBytes / 1024).toFixed(0)} KB)
+**Tokens**: in=${usage.input_tokens}, out=${usage.output_tokens}, cache_create=${usage.cache_creation_input_tokens ?? 0}, cache_read=${usage.cache_read_input_tokens ?? 0}
 
 ## Image quality
 - Overall legibility: **${r.image_quality.overall_legibility}**
@@ -149,7 +186,9 @@ ${rows}
 function summarize(r: OcrResponse) {
   const nonNull = r.cells.filter((c) => c.raw_notation != null);
   const avgConf = nonNull.length ? nonNull.reduce((s, c) => s + c.confidence, 0) / nonNull.length : 0;
-  console.log(`cells=${r.cells.length} non_blank=${nonNull.length} avg_conf=${avgConf.toFixed(3)} legibility=${r.image_quality.overall_legibility}`);
+  console.log(
+    `cells=${r.cells.length} non_blank=${nonNull.length} avg_conf=${avgConf.toFixed(3)} legibility=${r.image_quality.overall_legibility}`,
+  );
 }
 
 const imagePath = process.argv[2];
