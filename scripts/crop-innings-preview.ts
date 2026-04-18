@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const LAYOUT = {
-  playerColRatio: 0.180,
+  playerColRatio: 0.135,
   rightStatsRatio: 0.770,
   headerBottom: 0.080,
   playGridBottom: 0.226,
