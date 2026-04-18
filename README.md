@@ -332,6 +332,10 @@ Explicit non-goals for this build: CRDTs, PowerSync/ElectricSQL/RxDB, PDF league
 
 All development runs in **GitHub Codespaces** — see [docs/codespace-setup.md](./docs/codespace-setup.md). The devcontainer installs bun + dependencies automatically; scorebook images go into `data/samples/` (gitignored — real scorebooks contain player names).
 
+### Research archive
+
+The architectural decisions in this README are distilled from three deep-research passes on scorebook notation schools, Japanese amateur baseball stats rules, Claude Vision prompt engineering, PWA offline sync, Supabase RLS, competitive landscape, and capture UX. The full PDFs are kept at `docs/research/` (gitignored, local-only). The decisions and their primary-source citations are summarised above; the PDFs are reference material if a decision needs to be revisited.
+
 ## License
 
 MIT
