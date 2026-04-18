@@ -168,7 +168,8 @@ describe("extractStage2Columns", () => {
       client: { messages: { create } } as never,
       onLog: () => {},
     });
-    const body = create.mock.calls[0]![0] as unknown as {
+    const calls = create.mock.calls as unknown as Array<[unknown]>;
+    const body = calls[0][0] as {
       system: { text: string }[];
     };
     expect(body.system[0].text).toMatch(/keio/i);
@@ -181,7 +182,8 @@ describe("extractStage2Columns", () => {
       client: { messages: { create } } as never,
       onLog: () => {},
     });
-    const body = create.mock.calls[0]![0] as unknown as {
+    const calls = create.mock.calls as unknown as Array<[unknown]>;
+    const body = calls[0][0] as {
       system: { text: string }[];
     };
     expect(body.system[0].text).toMatch(/waseda/i);
@@ -212,7 +214,8 @@ describe("extractStage2Columns", () => {
       client: { messages: { create } } as never,
       onLog: () => {},
     });
-    const body = create.mock.calls[0]![0] as unknown as {
+    const calls = create.mock.calls as unknown as Array<[unknown]>;
+    const body = calls[0][0] as {
       messages: { content: { type: string; text?: string }[] }[];
     };
     const userText = body.messages[0].content.find(
