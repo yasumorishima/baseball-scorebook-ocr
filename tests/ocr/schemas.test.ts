@@ -10,9 +10,10 @@ import {
   StyleDetectionSchema,
   Stage2ColumnResponseSchema,
   validateCellConsistency,
+  type CellReadParsed,
 } from "../../src/ocr/schemas.js";
 
-const VALID_EXTRAS = {
+const VALID_EXTRAS: CellReadParsed["extras"] = {
   SH: false,
   SF: false,
   HBP: false,
@@ -25,7 +26,7 @@ const VALID_EXTRAS = {
   strikeout_reached: false,
 };
 
-const VALID_CELL = {
+const VALID_CELL: CellReadParsed = {
   batting_order: 1,
   inning: 1,
   raw_notation: "6-3",

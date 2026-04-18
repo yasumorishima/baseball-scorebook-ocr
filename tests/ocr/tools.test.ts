@@ -38,7 +38,7 @@ describe("Tool definitions", () => {
   });
 
   it("extract_column_cells tool wraps cells array", () => {
-    const root = EXTRACT_COLUMN_CELLS_TOOL.input_schema as {
+    const root = EXTRACT_COLUMN_CELLS_TOOL.input_schema as unknown as {
       required: string[];
       properties: Record<string, { type: string; items?: unknown }>;
     };
@@ -47,7 +47,7 @@ describe("Tool definitions", () => {
   });
 
   it("read_single_cell tool's input_schema matches cell-level structure", () => {
-    const root = READ_SINGLE_CELL_TOOL.input_schema as {
+    const root = READ_SINGLE_CELL_TOOL.input_schema as unknown as {
       required: string[];
       properties: Record<string, unknown>;
     };
@@ -59,9 +59,13 @@ describe("Tool definitions", () => {
 
 describe("Schema / Tool enum parity", () => {
   it("outcome enum in JSON Schema matches Zod OutcomeSchema (plus null)", () => {
+    const schema = EXTRACT_COLUMN_CELLS_TOOL.input_schema as unknown as {
+      properties: Record<string, unknown>;
+    };
     const cellProps = (
-      (EXTRACT_COLUMN_CELLS_TOOL.input_schema.properties as Record<string, unknown>)
-        .cells as { items: { properties: Record<string, { enum?: unknown[] }> } }
+      schema.properties.cells as {
+        items: { properties: Record<string, { enum?: unknown[] }> };
+      }
     ).items.properties;
     const jsonEnum = new Set(cellProps.outcome.enum as unknown[]);
     for (const v of OutcomeSchema.options) {
