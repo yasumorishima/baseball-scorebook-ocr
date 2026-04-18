@@ -14,5 +14,6 @@ data/samples/*.heic
 data/samples/*.pdf
 !data/samples/.gitkeep
 experiments/**/output/
+docs/research/
 .venv/
 __pycache__/
