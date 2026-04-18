@@ -177,6 +177,108 @@ NPB and Seibido do not publish downloadable example PDFs, and NPB's terms explic
 
 The notation system itself (idea / scoring convention) is not copyrightable under Japanese law, but a specific printed layout may qualify as a compiled work. Self-generating the grid from SVG sidesteps this entirely.
 
+## Competitive position
+
+Japanese amateur baseball has roughly 4.7–5 million active players across 310,000 teams. The top scoring app ([スコアラー](https://apps.apple.com/jp/app/id1522649930)) holds a 4.5★ / 774-review position on the Japanese App Store. **No existing app in this market offers handwritten scorebook OCR.** The スコアラー developer publicly acknowledged in an August 2025 App Store reply that handwritten lineup-sheet OCR was "technically difficult with low feasibility" — the same class of problem this project is attempting to solve with Opus 4.7 Vision.
+
+Other gaps that existing apps leave open:
+
+- Multi-device concurrent entry with offline reconciliation
+- Keio-shiki (NPB-style) scorekeeping support (every Japanese app is Waseda-shiki-only)
+- MLB-style earned run accounting (every app hard-codes NPB rules)
+- Alumni-era aggregated stats (current + OB player career totals)
+- League-specific PDF report exports
+- Per-at-bat video linkage in a Japanese-first UI
+
+## Server-side architecture
+
+Scorebook data is inherently an append-only event stream — each plate appearance is one event, corrections are recorded as new events referencing the original rather than in-place edits. This maps cleanly to a CQRS-style design and sidesteps the merge complexity that chat/document apps need.
+
+### Stack
+
+| Layer | Choice | License | Why |
+|---|---|---|---|
+| PWA framework | [@serwist/next v9.5+](https://github.com/serwist/serwist) | MIT | `next-pwa` has had no release since 2022 ([issue #508](https://github.com/shadowwalker/next-pwa/issues/508)); Serwist ships Next.js 15 / App Router / Turbopack / Bun support |
+| Client-side DB | [Dexie.js](https://github.com/dexie/Dexie.js) | Apache-2.0 | Compound indexes + 735k weekly downloads; lighter than CRDT libraries |
+| Realtime protocol | Supabase [Realtime Broadcast](https://supabase.com/docs/guides/realtime/broadcast) | — | Officially recommended over Postgres Changes for scale |
+| Conflict strategy | Append-only events + UUID v7 idempotency key + `(game_id, seq)` UNIQUE | — | CRDT (Automerge/Yjs) is overkill for an event log; UNIQUE-constraint OCC is sufficient |
+
+`@supabase/supabase-js` does **not** ship offline write queuing for the web ([discussion #40664](https://github.com/orgs/supabase/discussions/40664)). Offline sync is implemented in-app.
+
+### Dual-layer sync queue
+
+- **Service Worker** (Serwist `BackgroundSyncQueue`): intercepts failing `POST /rest/v1/game_events` requests, replays them with exponential backoff for up to 24 h on Chromium.
+- **App layer** (Dexie `pending_events` table): mirrors every write locally before it hits the network. Exposes a "unsynced" count to the UI and replays on `online` / app launch. This also covers Safari, where Background Sync is not yet implemented.
+
+### Conflict shape
+
+The server's `game_events` table declares `UNIQUE (game_id, seq)`. When two devices both append at `seq = 42`, the second insert returns Postgres error `23505`, the offending client re-reads the latest seq for that game, renumbers, and retries. UUID v7 primary keys make the insert itself idempotent — dedicated retries via the SW never double-insert.
+
+### Postgres schema (draft)
+
+```sql
+create table games (
+  id uuid primary key default gen_random_uuid(),
+  team_home text not null, team_away text not null,
+  created_by uuid not null references auth.users(id),
+  created_at timestamptz not null default now(),
+  version bigint not null default 0
+);
+
+create table game_events (
+  id            uuid primary key,              -- client-generated UUID v7 (idempotency)
+  game_id       uuid not null references games(id) on delete cascade,
+  seq           bigint not null,               -- monotonic within a game
+  event_type    text not null,                 -- at_bat | run | substitution | correction
+  payload       jsonb not null,
+  correction_of uuid references game_events(id),
+  client_id     text not null,
+  occurred_at   timestamptz not null,
+  recorded_at   timestamptz not null default now(),
+  unique (game_id, seq)
+);
+create index on game_events (game_id, seq);
+```
+
+## Team access control
+
+Teams have four roles — `owner` / `admin` / `scorer` / `viewer` — matching the real division of work in an amateur club (representative, manager, recorder, supporters). Invitations are short alphanumeric codes that can be read out loud on LINE or at a practice.
+
+### Invitation codes
+
+```ts
+import { customAlphabet } from "nanoid";
+const alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const inviteCode = customAlphabet(alphabet, 8);
+// 57^8 ≈ 1.1e14 combinations; 0/O/1/I/l/L excluded to avoid voice-transcription confusion
+```
+
+Six-digit numeric codes are explicitly rejected — the space is small enough to enumerate. Codes carry a default 7-day expiry and 30-use cap. Supabase itself exposes only `inviteUserByEmail`; code-based invites are implemented in-app per [discussion #6055](https://github.com/supabase/supabase/discussions/6055).
+
+### RLS performance
+
+Official Supabase benchmarks ([discussion #14576](https://github.com/orgs/supabase/discussions/14576), [RLS-Performance repo](https://github.com/GaryAustin1/RLS-Performance)) show two orders of magnitude difference depending on policy shape:
+
+- `auth.uid()` inline → wrap as `(select auth.uid())`: **179 ms → 9 ms** on a realistic dataset.
+- Direct `team_members` join in a policy → move into `SECURITY DEFINER stable` function returning `setof uuid`, compare with `IN`: **>2 min → 2 ms**.
+- Every policy declares `TO authenticated` to skip evaluation for anonymous requests.
+- `team_members(user_id)` and `team_members(team_id)` carry btree indexes.
+
+### Redemption RPC
+
+Rather than letting the client SELECT from `invitations` directly (which would expose the code column to enumeration), redemption runs through a `SECURITY DEFINER` function that validates the code, checks rate limits on the per-user `invitation_attempts` table, inserts the row into `team_members`, and increments `use_count` — all in a single transaction. The client only calls `supabase.rpc('redeem_invitation', { p_code })`.
+
+### Middleware
+
+Next.js App Router middleware calls `supabase.auth.getClaims()` rather than `getSession()`, because `getSession()` trusts unverified cookie data. `getClaims()` performs the JWT signature check. Long-running sessions without refresh are rejected at the edge.
+
+### Pitfalls to avoid (Supabase official docs)
+
+- Using `user_metadata` for authorization (client-editable — use `app_metadata` or a DB table instead).
+- PG14 views bypassing RLS of their underlying tables (use `WITH (security_invoker = true)` on PG15+).
+- An UPDATE policy without a matching SELECT policy — the UPDATE has to read the existing row first.
+- Ever shipping the `service_role` key to the client; that key bypasses RLS entirely.
+
 ## Development
 
 All development runs in **GitHub Codespaces** — see [docs/codespace-setup.md](./docs/codespace-setup.md). The devcontainer installs bun + dependencies automatically; scorebook images go into `data/samples/` (gitignored — real scorebooks contain player names).
