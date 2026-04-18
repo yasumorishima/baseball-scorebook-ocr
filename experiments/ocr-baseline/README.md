@@ -4,18 +4,14 @@ Goal: **how accurately can Claude Opus 4.7 read a Japanese amateur-baseball scor
 
 This is the riskiest part of the project. If accuracy is production-ready (≥90%), the app becomes "snap a photo → stats appear." If it's in the 60–80% range, we pivot to "magic autofill with review." Below 60% and we de-emphasize this entry path.
 
-## How to run
+## How to run (in Codespace)
 
 ```bash
-# 1. Drop scorebook images (jpg/jpeg/png) into ../data/samples/
-# 2. Set your Anthropic API key:
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# 3. Install deps (first time only):
-bun install      # or: npm install
-
-# 4. Run the OCR probe on a single image:
-bun run ocr:test -- ../../data/samples/your-photo.jpg
+# 1. Open a Codespace on this repo (see docs/codespace-setup.md).
+#    ANTHROPIC_API_KEY is injected from your user-level Codespaces secret.
+# 2. Drag scorebook images (jpg/jpeg/png/heic) into data/samples/.
+# 3. Run the OCR probe:
+bun run ocr:test -- data/samples/your-photo.jpg
 ```
 
 Output is written to `./output/<image-name>.json` and a human-readable `./output/<image-name>.md`.

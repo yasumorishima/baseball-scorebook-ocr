@@ -32,6 +32,10 @@ Opus 4.7's multimodal + domain-reasoning combination is the first realistic shot
 
 Early development. See [experiments/ocr-baseline/](./experiments/ocr-baseline/) for the scorebook OCR accuracy probe — the riskiest part of the project.
 
+## Development
+
+All development runs in **GitHub Codespaces** — see [docs/codespace-setup.md](./docs/codespace-setup.md). The devcontainer installs bun + dependencies automatically; scorebook images go into `data/samples/` (gitignored — real scorebooks contain player names).
+
 ## License
 
 MIT
