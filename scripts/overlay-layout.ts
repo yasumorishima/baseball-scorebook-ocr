@@ -6,13 +6,16 @@ import { resolve } from "node:path";
 // 座標はすべて 90deg 回転後の landscape 画像基準 (3300x2550)
 type Region = { name: string; x: [number, number]; y: [number, number]; color: string };
 
+// Seibido 9104 waseda 比率 (2026-04-19 overlay 第2回実測)
 const REGIONS: Region[] = [
-  { name: "header",        x: [0.000, 1.000], y: [0.000, 0.089], color: "#ff0000" },
-  { name: "player_col",    x: [0.000, 0.088], y: [0.089, 0.356], color: "#0000ff" },
-  { name: "play_grid",     x: [0.088, 0.669], y: [0.089, 0.356], color: "#00aa00" },
-  { name: "totals_row",    x: [0.088, 0.669], y: [0.356, 0.390], color: "#ff8800" },
-  { name: "pitcher_area",  x: [0.000, 0.669], y: [0.390, 0.700], color: "#8800ff" },
-  { name: "right_stats",   x: [0.669, 1.000], y: [0.000, 1.000], color: "#888888" },
+  { name: "page_header",    x: [0.000, 0.683], y: [0.000, 0.022], color: "#ff0000" },
+  { name: "inning_labels",  x: [0.089, 0.683], y: [0.022, 0.054], color: "#cc0044" },
+  { name: "player_col",     x: [0.000, 0.089], y: [0.054, 0.216], color: "#0000ff" },
+  { name: "play_grid",      x: [0.089, 0.683], y: [0.054, 0.216], color: "#00aa00" },
+  { name: "totals_row",     x: [0.089, 0.683], y: [0.216, 0.244], color: "#ff8800" },
+  { name: "pitcher_area",   x: [0.000, 0.683], y: [0.244, 0.470], color: "#8800ff" },
+  { name: "catcher_area",   x: [0.000, 0.683], y: [0.470, 0.800], color: "#ff00cc" },
+  { name: "right_stats",    x: [0.683, 1.000], y: [0.000, 1.000], color: "#888888" },
 ];
 
 const INNING_COUNT = 13;
