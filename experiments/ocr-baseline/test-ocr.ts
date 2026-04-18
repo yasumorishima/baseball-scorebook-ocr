@@ -65,7 +65,6 @@ async function runOcr(imagePath: string) {
   const res = await client.messages.create({
     model: MODEL,
     max_tokens: 16000,
-    temperature: 0,
     system: [
       {
         type: "text",
