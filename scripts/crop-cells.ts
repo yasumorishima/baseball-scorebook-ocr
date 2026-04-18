@@ -5,8 +5,8 @@ import { resolve } from "node:path";
 const LAYOUT = {
   playerColRatio: 0.135,
   rightStatsRatio: 0.770,
-  headerBottom: 0.108,
-  playGridBottom: 0.520,
+  headerBottom: 0.125,
+  playGridBottom: 0.500,
   inningCount: 13,
   batterCount: 10,
 };
