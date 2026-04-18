@@ -279,6 +279,55 @@ Next.js App Router middleware calls `supabase.auth.getClaims()` rather than `get
 - An UPDATE policy without a matching SELECT policy — the UPDATE has to read the existing row first.
 - Ever shipping the `service_role` key to the client; that key bypasses RLS entirely.
 
+## Capture UX
+
+OCR accuracy is bounded by input quality. The capture UI follows a three-state model modeled after Adobe Scan:
+
+1. **Searching** — camera feed is live but no quadrilateral has stabilized. Neutral overlay, subtitle *Looking for document*.
+2. **Hold steady** — `jscanify` has reported four corners with drift under `CORNER_MOVE_PX` for `STABLE_FRAMES` consecutive frames and blur/luma checks pass. Accented overlay, auto-capture fires after the stability window.
+3. **Manual fallback** — if auto-capture hasn't fired after a fixed timeout, surface a manual shutter so the user can force a shot. Avoids dead-ends on difficult lighting.
+
+### Thresholds (seeded from Dynamsoft Document Scanner defaults)
+
+```ts
+const STABLE_FRAMES = 12;      // frames of corner-stability before auto-capture
+const CORNER_MOVE_PX = 20;     // max drift between consecutive frames
+const BLUR_VAR_MIN = 100;      // OpenCV Laplacian variance minimum
+const DARK_LUMA_MAX = 80;      // mean luma (0-255) below which we warn "too dark"
+```
+
+Blur is detected via OpenCV.js `cv.Laplacian` + `cv.meanStdDev` — the squared standard deviation of the Laplacian image is a standard sharpness proxy ([Dynamsoft code pool](https://www.dynamsoft.com/codepool/quality-evaluation-of-scanned-document-images.html)). Auto-capture only fires when **all four conditions AND together**: corner stability, blur OK, luma OK, quadrilateral plausible.
+
+### iOS Safari gotchas
+
+- Use `facingMode: { ideal: 'environment' }`, never `{ exact: 'environment' }` — the `exact` form fails on iOS through the 16.4 range ([WebKit Bug 252560](https://bugs.webkit.org/show_bug.cgi?id=252560)).
+- iPhone 15 Pro's Wide / Ultra-wide / Tele cameras are not cleanly enumerable via `navigator.mediaDevices.enumerateDevices()` in WebRTC contexts (Apple Developer Forum thread 776460). Accept the default and let the user tap-to-switch if needed.
+- In installed PWAs, hook `video.onended` — Safari may end the stream when the app is backgrounded and needs explicit reacquire on resume.
+
+### Library choices
+
+| Library | Role | License | Size (approx.) | Why |
+|---|---|---|---|---|
+| [jscanify v1.4.2](https://github.com/puffinsoft/jscanify) | Quadrilateral detection & perspective unwarp | MIT | 3.7 MB + OpenCV.js (~8.7 MB) | ~1.7k stars, active, exposes `findPaperContour` / `getCornerPoints` / `extractPaper` directly |
+| [OpenCV.js](https://github.com/opencv/opencv) | `cv.Laplacian` + `cv.meanStdDev` for blur scoring | Apache-2.0 | ~8-9 MB | Already loaded as a jscanify dependency |
+| [cropperjs v2](https://github.com/fengyuanchen/cropperjs) | Post-capture manual crop / adjust | MIT | tens of KB | 13.4k stars, active through 2026-04 |
+| [react-webcam](https://github.com/mozmorris/react-webcam) | `getUserMedia` + canvas bridge | MIT | ~10 KB | Minimal, stable |
+
+Explicitly rejected:
+
+- **Dynamsoft Document Scanner SDK** — commercially licensed, overkill for this scope.
+- **TensorFlow.js-based detectors** — bundle size and startup cost not justified when classical CV (Hough + corner refinement via OpenCV.js) does the job.
+
+## Priority order for the 2-day build
+
+1. **OCR MVP**: jscanify preprocessing → Opus 4.7 Vision POST → parsed JSON. Day 1 spike; Day 2 prompt tuning and per-cell review UI.
+2. **Capture UX**: Adobe-Scan three-state model with the thresholds above. OCR accuracy follows from clean input, so this comes *before* any server work.
+3. **Offline event log**: @serwist/next + Dexie pending queue + Supabase `game_events` with `UNIQUE(game_id, seq)` and `ON CONFLICT (id) DO NOTHING`. Background sync on Chromium; app-layer flush on Safari.
+4. **Team RLS**: nanoid 8-char invites, SECURITY DEFINER `user_team_ids` / `has_team_role` helpers, `(select auth.uid())` wrapping, `redeem_invitation` RPC with per-user rate limit.
+5. **Realtime broadcast**: `realtime.broadcast_changes()` trigger on `game_events`; clients subscribe to `channel('game:'+gameId)` and merge into Dexie. Broadcast rather than Postgres Changes for scale.
+
+Explicit non-goals for this build: CRDTs, PowerSync/ElectricSQL/RxDB, PDF league-report export, OB alumni lineage aggregation, Serializable transactions anywhere except the final game-close step.
+
 ## Development
 
 All development runs in **GitHub Codespaces** — see [docs/codespace-setup.md](./docs/codespace-setup.md). The devcontainer installs bun + dependencies automatically; scorebook images go into `data/samples/` (gitignored — real scorebooks contain player names).
