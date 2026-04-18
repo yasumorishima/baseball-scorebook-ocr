@@ -29,6 +29,15 @@ async function dimsOf(buf: Buffer): Promise<{ width: number; height: number }> {
   return { width: meta.width!, height: meta.height! };
 }
 
+function rectsOverlap(a: Rect, b: Rect): boolean {
+  return (
+    a.x < b.x + b.width &&
+    b.x < a.x + a.width &&
+    a.y < b.y + b.height &&
+    b.y < a.y + a.height
+  );
+}
+
 /** rect.width × rect.height と実バッファの実サイズが一致するか。 */
 async function expectRectMatchesBuffer(rect: Rect, buf: Buffer): Promise<void> {
   const d = await dimsOf(buf);
@@ -139,12 +148,15 @@ describe("cropInnings (SEIBIDO_9104_WASEDA defaults)", () => {
     }
   });
 
-  it("covers the full image area disjointly (header + player + play_grid + stats + totals + pitcher + catcher)", async () => {
+  it("covers the scorebook content regions without overlap", async () => {
+    // architecture.md §20.2 が定義するのは上記 8 領域のみ。
+    // 合計は約 86.25%（bottom footer = x 0-0.770, y 0.830-1.000 は未定義、
+    // 守備交代メモ等の手書き記入欄で OCR 対象外）。
+    // Day 2 で pitcher_area Hough 校正時に footer を拡張する。
     const img = await canvas(LANDSCAPE_W, LANDSCAPE_H);
     const { meta } = await cropInnings(img);
     const { rects } = meta;
 
-    // 合計ピクセル数 = W × H と一致
     const areaOf = (r: Rect) => r.width * r.height;
     const playGridArea = rects.innings.reduce((s, r) => s + areaOf(r), 0);
     const total =
@@ -156,10 +168,27 @@ describe("cropInnings (SEIBIDO_9104_WASEDA defaults)", () => {
       areaOf(rects.pitcher) +
       areaOf(rects.catcher);
 
-    // ピクセル丸めの影響でわずかに差があり得る（許容 <1%）
     const fullArea = LANDSCAPE_W * LANDSCAPE_H;
-    expect(total / fullArea).toBeGreaterThan(0.99);
-    expect(total / fullArea).toBeLessThan(1.01);
+    const coverage = total / fullArea;
+    // 既定比率では約 0.8625（bottom footer 未定義のため）
+    expect(coverage).toBeGreaterThan(0.85);
+    expect(coverage).toBeLessThanOrEqual(1.0);
+
+    // 領域同士が重ならないこと（pair-wise 確認）
+    const allRects: Rect[] = [
+      rects.header,
+      rects.player,
+      ...rects.innings,
+      rects.stats,
+      rects.totals,
+      rects.pitcher,
+      rects.catcher,
+    ];
+    for (let i = 0; i < allRects.length; i++) {
+      for (let j = i + 1; j < allRects.length; j++) {
+        expect(rectsOverlap(allRects[i], allRects[j])).toBe(false);
+      }
+    }
   });
 
   it("respects custom inningCount", async () => {
