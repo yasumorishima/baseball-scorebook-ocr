@@ -20,6 +20,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
     "@serwist/next": "^9.0.11",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.47.0",
     "@techstark/opencv-js": "^4.12.0-release.1",
     "dexie": "^4.0.11",
     "nanoid": "^5.0.9",
