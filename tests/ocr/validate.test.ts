@@ -260,6 +260,103 @@ describe("validateGrid", () => {
     });
   });
 
+  // ── #4 diamond_reached_base_mismatch ──────────────────────
+  describe("diamond_reached_base_mismatch", () => {
+    it("does NOT warn for home_run with reached_base=4 (batter scored themselves)", () => {
+      const grid = makeGrid([cell(1, 1, "home_run", 4, null)]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((w) => w.kind === "diamond_reached_base_mismatch"),
+      ).toBeUndefined();
+    });
+
+    it("does NOT warn when a single with reached_base=4 has subsequent at-bats in the inning", () => {
+      // Batter 1 singles and eventually scores; batter 2's double drives them in.
+      const grid = makeGrid([
+        cell(1, 1, "single", 4, null), // eventually scored
+        cell(2, 1, "double", 2, null), // drove batter 1 in
+        cell(3, 1, "ground_out", 0, 1),
+        cell(4, 1, "fly_out", 0, 2),
+        cell(5, 1, "strikeout_swinging", 0, 3),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((w) => w.kind === "diamond_reached_base_mismatch"),
+      ).toBeUndefined();
+    });
+
+    it("warns when a walk with reached_base=4 has NO subsequent at-bats in the inning", () => {
+      // Batter 1 walks and supposedly scores, but no other batters in the inning.
+      const grid = makeGrid([cell(1, 1, "walk", 4, null)]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      const w = report.warnings.find(
+        (v) => v.kind === "diamond_reached_base_mismatch",
+      );
+      expect(w).toBeDefined();
+      expect(w?.message).toContain("reached_base=4");
+    });
+
+    it("does NOT warn when reached_base=4 with stolen_bases evidence (rare self-advance)", () => {
+      const grid = makeGrid([
+        cell(1, 1, "walk", 4, null, {
+          extras: { ...EXTRAS, stolen_bases: [2, 3, 4] },
+        }),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((w) => w.kind === "diamond_reached_base_mismatch"),
+      ).toBeUndefined();
+    });
+
+    it("does NOT warn when reached_base=4 with wild_pitch / passed_ball evidence", () => {
+      const grid = makeGrid([
+        cell(1, 1, "walk", 4, null, {
+          extras: { ...EXTRAS, wild_pitch: true },
+        }),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((w) => w.kind === "diamond_reached_base_mismatch"),
+      ).toBeUndefined();
+    });
+
+    it("does NOT warn for triple with reached_base=3 (covered by rule #3, not this rule)", () => {
+      const grid = makeGrid([cell(1, 1, "triple", 3, null)]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((w) => w.kind === "diamond_reached_base_mismatch"),
+      ).toBeUndefined();
+    });
+
+    it("warns for single reached_base=4 at the last filled position in an inning of many batters", () => {
+      // Batter 9 is the last one in inning 1; no one after them to drive them in.
+      const grid = makeGrid(
+        [
+          cell(1, 1, "ground_out", 0, 1),
+          cell(2, 1, "fly_out", 0, 2),
+          cell(3, 1, "strikeout_swinging", 0, 3),
+          // inning ended at batter 3 — batter 9's cell shouldn't even exist in inning 1,
+          // but if OCR misreads and puts reached_base=4 on batter 9, we should catch it.
+          cell(9, 1, "single", 4, null),
+        ],
+        9,
+        9,
+      );
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((w) => w.kind === "diamond_reached_base_mismatch"),
+      ).toBeDefined();
+    });
+
+    it("does not false-positive when outcome is null (blank cell)", () => {
+      const grid = makeGrid([cell(1, 1, null, null, null)]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((w) => w.kind === "diamond_reached_base_mismatch"),
+      ).toBeUndefined();
+    });
+  });
+
   // ── #10 sacrifice_batter_scored ──────────────────────────
   describe("sacrifice_batter_scored", () => {
     it("warns when outcome=sac_bunt and reached_base=4", () => {

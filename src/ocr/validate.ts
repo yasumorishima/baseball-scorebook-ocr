@@ -3,16 +3,17 @@
  *
  * docs/architecture.md §6.1 / §6.2 準拠。
  *
- * 検査 8 種のうち Day 1 で実装するのは 4 種 + 派生 2 種:
+ * 検査 8 種のうち Day 1 で実装済 5 種 + 派生 2 種:
  *   ✓ #1 outs_per_inning               ≤3 per inning; =3 except last unfinished
  *   ✓ #2 batting_order_continuity      打順連続性
  *   ✓ #3 reached_base_outcome_mismatch outcome ↔ reached_base 整合
+ *   ✓ #4 diamond_reached_base_mismatch reached_base=4（得点）は home_run か
+ *                                        後続打席のどちらかが必要（Grid 内完結）
  *   ✓ #8 empty_cell_in_progress        進行中イニングの空セル warning
  *   ✓ #9 extras_outcome_conflict        outcome ↔ extras フラグの排他違反（Single-representation）
  *   ✓ #10 sacrifice_batter_scored      犠打/犠飛で打者自身が得点 = 規則逸脱
  *
  * Day 2 で追加:
- *   - #4 diamond_reached_base_mismatch （菱形観測値 vs reached_base、model 側 CoT で代替中）
  *   - #5 runs_total_mismatch           （合計行 OCR が必要）
  *   - #6 pitcher_totals_mismatch       （投手ログ OCR が必要）
  *   - #7 at_bats_mismatch              （stats/compute との連携で判定）
@@ -175,6 +176,45 @@ export function validateGrid(
             "error",
             `cell (${cell.batting_order}, ${cell.inning}): outcome=${cell.outcome} but reached_base=${cell.reached_base} < ${hitBase}`,
             { cells: [{ batting_order: cell.batting_order, inning: cell.inning }] },
+          ),
+        );
+      }
+    }
+  }
+
+  // ── #4 diamond_reached_base_mismatch ─────────────────────
+  // reached_base=4（得点）は以下いずれかが必要:
+  //   (a) outcome="home_run"（打者自身が本塁打で生還）
+  //   (b) 同一イニング内に後続打席が少なくとも 1 つ存在
+  //       （後続打者の安打・エラー等で生還 = ランナー advancement）
+  //   (c) extras に stolen_bases が記録されている（自身の盗塁で生還、稀）
+  //   (d) extras.wild_pitch / passed_ball / error_fielder が記録されている
+  //       （その打席中のプレイで生還する稀なケース）
+  //
+  // 上記いずれも無い場合、reached_base=4 は OCR 誤読の可能性が高い → warning。
+  //
+  // Note: reached_base=1/2/3 は #3 (reached_base_outcome_mismatch) で網羅済。
+  // Day 2 で合計得点行 OCR が入ったら、runs_total_mismatch と合わせて error 昇格を検討。
+  for (let bi = 0; bi < batterCount; bi++) {
+    for (let ii = 0; ii < inningCount; ii++) {
+      const cell = grid[bi][ii];
+      if (cell == null) continue;
+      if (cell.reached_base !== 4) continue;
+      if (cell.outcome === "home_run") continue;
+
+      const hasSubsequentPA = hasSubsequentFilledCellInInning(grid, bi, ii);
+      const hasOwnAdvancementEvidence = cellHasRunScoringExtras(cell);
+
+      if (!hasSubsequentPA && !hasOwnAdvancementEvidence) {
+        warnings.push(
+          violation(
+            "diamond_reached_base_mismatch",
+            "warning",
+            `cell (${cell.batting_order}, ${cell.inning}): reached_base=4 (scored) but outcome=${cell.outcome ?? "null"} and no subsequent at-bat in this inning could have driven the runner in. Possible diamond shading mis-read.`,
+            {
+              inning: ii,
+              cells: [{ batting_order: cell.batting_order, inning: cell.inning }],
+            },
           ),
         );
       }
@@ -387,4 +427,41 @@ function detectExtrasOutcomeConflicts(
   }
 
   return issues;
+}
+
+/**
+ * 同一イニング内で、指定打順 bi より後（打順下方）に埋まっているセルがあるか。
+ * reached_base=4 の妥当性検証に使う（#4 diamond_reached_base_mismatch）。
+ */
+function hasSubsequentFilledCellInInning(
+  grid: Grid<CellRead>,
+  bi: number,
+  ii: number,
+): boolean {
+  for (let k = bi + 1; k < grid.length; k++) {
+    const subsequent = grid[k][ii];
+    if (subsequent == null) continue;
+    // outcome が null でも raw_notation が埋まっていれば「打席は立った」と見なす
+    if (subsequent.outcome != null || subsequent.raw_notation != null) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * セルの extras に「打者自身の at-bat 中に生還しうる事象」が記録されているか。
+ * - 盗塁（stolen_bases に 4 塁を含む、または 2〜3 塁を経由後の生還）
+ * - 暴投 / 捕逸 / エラー（その打席中にランナーが advance）
+ *
+ * reached_base=4 が outcome=home_run 以外で成立する稀な経路を拾うための、
+ * 過剰 warning を避ける目的の guard。
+ */
+function cellHasRunScoringExtras(cell: CellRead): boolean {
+  const e = cell.extras;
+  if (e.stolen_bases.length > 0) return true;
+  if (e.wild_pitch) return true;
+  if (e.passed_ball) return true;
+  if (e.error_fielder != null) return true;
+  return false;
 }
