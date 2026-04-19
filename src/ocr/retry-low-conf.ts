@@ -153,7 +153,8 @@ export async function retryLowConfCells(
     const bi = t.batting_order - 1;
     const ii = t.inning - 1;
     const before = t.before;
-    const after = r.parsed.confidence > before.confidence ? r.parsed : before;
+    // >= で tie の場合は retry 結果を採用（alternatives 等が最新で有用なため）
+    const after = r.parsed.confidence >= before.confidence ? r.parsed : before;
     newGrid[bi][ii] = after;
     retried.push({
       coord: { batting_order: t.batting_order, inning: t.inning },

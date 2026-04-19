@@ -144,6 +144,39 @@ describe("aggregateBattingFromCells", () => {
     expect(s.AB).toBe(0);
     expect(plateAppearancesOf(s)).toBe(0);
   });
+
+  // 回帰テスト: Phase E-4 レビューで検出された AB 二重計上バグ
+  describe("extras precedence (no double-counting with outcome)", () => {
+    it("extras.SH=true with outcome=ground_out → SH+1, AB=0 (not double-counted)", () => {
+      const s = aggregateBattingFromCells([
+        cell("ground_out", { extras: { ...EXTRAS, SH: true } }),
+      ]);
+      expect(s.SH).toBe(1);
+      expect(s.AB).toBe(0);
+    });
+
+    it("extras.SF=true with outcome=fly_out → SF+1, AB=0", () => {
+      const s = aggregateBattingFromCells([
+        cell("fly_out", { extras: { ...EXTRAS, SF: true } }),
+      ]);
+      expect(s.SF).toBe(1);
+      expect(s.AB).toBe(0);
+    });
+
+    it("extras.HBP=true with outcome!=hbp → HBP+1, AB=0", () => {
+      const s = aggregateBattingFromCells([
+        cell("unknown", { extras: { ...EXTRAS, HBP: true } }),
+      ]);
+      expect(s.HBP).toBe(1);
+      expect(s.AB).toBe(0);
+    });
+
+    it("canonical sac_bunt still counts as SH only", () => {
+      const s = aggregateBattingFromCells([cell("sac_bunt")]);
+      expect(s.SH).toBe(1);
+      expect(s.AB).toBe(0);
+    });
+  });
 });
 
 describe("computeBattingRates", () => {

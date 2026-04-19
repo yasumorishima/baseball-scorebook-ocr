@@ -115,7 +115,19 @@ ${renderFewshotBlock(fewshot)}
 6. \`extras\` fields must all be populated (bool/null as appropriate) — never omit.
 7. Always include \`evidence\` string (1-2 sentences: what you saw that led to the call).
 8. \`confidence\` < 0.7 REQUIRES \`alternatives.length >= 2\`.
-9. Output \`column_quality\` with overall legibility and any systemic issues (glare, fold, tilt).`;
+9. Output \`column_quality\` with overall legibility and any systemic issues (glare, fold, tilt).
+
+## Single-representation rule (avoid double-counting)
+
+**outcome と extras フラグは排他**にしてください:
+- 犠打（sacrifice bunt）は **outcome="sac_bunt"** を使い、**extras.SH=false** のままにする。逆に \`ground_out\` + \`extras.SH=true\` のような重複表現は禁止。
+- 犠飛は **outcome="sac_fly"** のみ、**extras.SF=false**。
+- 死球は **outcome="hbp"** のみ、**extras.HBP=false**。
+- 野手選択は **outcome="fielders_choice"** のみ、**extras.FC=false**。
+- 失策出塁は **outcome="error"** のみ、**extras.error_fielder** には守備番号を入れる。
+- 振り逃げ出塁（dropped third strike reached）だけは例外: **outcome="strikeout_swinging"** or **"strikeout_looking"** を使い、**extras.strikeout_reached=true** を立てる。この場合は二重計上にならない（AB+1, SO+1, strikeoutReached+1）。
+
+重複表現が集計時に誤って打数を二重計上する恐れがあるため、**必ず片方のみ**で表現すること。`;
 }
 
 /**

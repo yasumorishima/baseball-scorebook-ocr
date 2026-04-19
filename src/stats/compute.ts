@@ -68,6 +68,27 @@ export function aggregateBattingFromCells(cells: CellRead[]): BattingStats {
 function applyCell(s: BattingStats, cell: CellRead): void {
   if (cell.outcome == null) return;
 
+  // extras 優先規則: SH/SF/HBP フラグが true のときは outcome に関わらず
+  // sacrifice bunt / sacrifice fly / HBP として AB ゼロで計上する。
+  // 理由: OCR が "ground_out + SH=true" や "fly_out + SF=true" を返す可能性があり、
+  // そのまま outcome 分岐で AB+1 されると NPB 9.02（SH/SF/HBP は AB 非計上）に違反する。
+  // プロンプトでも単一表現を指示するが、集計側でも fail-closed に整合を取る。
+  if (cell.extras.SH) {
+    s.SH += 1;
+    if (cell.reached_base === 4) s.R += 1;
+    return;
+  }
+  if (cell.extras.SF) {
+    s.SF += 1;
+    if (cell.reached_base === 4) s.R += 1;
+    return;
+  }
+  if (cell.extras.HBP && cell.outcome !== "hbp") {
+    s.HBP += 1;
+    if (cell.reached_base === 4) s.R += 1;
+    return;
+  }
+
   switch (cell.outcome) {
     case "single":
       s.AB += 1;
@@ -139,11 +160,6 @@ function applyCell(s: BattingStats, cell: CellRead): void {
       // 不明な outcome は集計から除外（低信頼セルとして retry 済みの前提）
       return;
   }
-
-  // extras（outcome と独立のフラグ）
-  if (cell.extras.SH && cell.outcome !== "sac_bunt") s.SH += 1;
-  if (cell.extras.SF && cell.outcome !== "sac_fly") s.SF += 1;
-  if (cell.extras.HBP && cell.outcome !== "hbp") s.HBP += 1;
 
   // 得点: 自打者が到達塁 4（得点）に達したセル
   if (cell.reached_base === 4) {
