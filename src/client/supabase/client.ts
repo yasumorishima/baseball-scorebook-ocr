@@ -29,3 +29,22 @@ export function getSupabaseBrowserClient(): SupabaseClient {
   cached = createBrowserClient(url, anonKey);
   return cached;
 }
+
+/**
+ * Phase 3 placeholder 用: env 未設定でも throw しない変種。
+ * 画面を描画はさせたいが、ボタン押下時に初めて Supabase と通信する場合に使う。
+ * 本番動線（auth 済前提のページ）では `getSupabaseBrowserClient()` を使い、
+ * env 欠落を即エラーにする。
+ */
+export function tryGetSupabaseBrowserClient():
+  | { client: SupabaseClient; error: null }
+  | { client: null; error: string } {
+  try {
+    return { client: getSupabaseBrowserClient(), error: null };
+  } catch (err) {
+    return {
+      client: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
