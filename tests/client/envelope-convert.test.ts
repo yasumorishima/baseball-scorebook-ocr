@@ -9,6 +9,7 @@ import {
 } from "@/src/client/sync/envelope-convert";
 import type { GameEventRow } from "@/src/client/db/dexie";
 import type {
+  CorrectionPayload,
   GameEventEnvelope,
   OcrMetadata,
   PlateAppearancePayload,
@@ -150,5 +151,37 @@ describe("cross-boundary roundtrip", () => {
       envelopeToDexieRow(viaSupabase),
     );
     expect(viaDexie).toEqual(FULL_ENVELOPE);
+  });
+
+  it("correction event with null inside payload preserves the null", () => {
+    // payload 内部の null は conversion 対象外（トップレベル optional のみ
+    // null↔undefined 変換する）。CorrectionPayload.before = null は保持されること。
+    const correctionPayload: CorrectionPayload = {
+      before: null,
+      after: { outcome: "ground_out" },
+      note: null,
+    };
+    const correctionEnvelope: GameEventEnvelope<CorrectionPayload> = {
+      eventId: "01920000-0000-7000-8000-000000000003",
+      gameId: FULL_ENVELOPE.gameId,
+      seq: 42,
+      ts: "2026-04-19T13:00:00.000Z",
+      type: "correction",
+      correctionOf: FULL_ENVELOPE.eventId,
+      payload: correctionPayload,
+      authorUserId: FULL_ENVELOPE.authorUserId,
+      source: "manual",
+    };
+
+    const viaSupabase = supabaseRowToEnvelope<CorrectionPayload>(
+      envelopeToSupabaseRow(correctionEnvelope),
+    );
+    const viaDexie = dexieRowToEnvelope<CorrectionPayload>(
+      envelopeToDexieRow(viaSupabase),
+    );
+
+    expect(viaDexie).toEqual(correctionEnvelope);
+    expect(viaDexie.payload.before).toBeNull();
+    expect(viaDexie.payload.note).toBeNull();
   });
 });

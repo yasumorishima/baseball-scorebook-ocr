@@ -41,9 +41,19 @@ export function subscribeGameEvents(
   });
 
   channel.on("broadcast", { event: "*" }, ({ payload }) => {
-    const row = payload as { record?: SupabaseGameEventRow } & SupabaseGameEventRow;
-    const snake = (row.record ?? row) as SupabaseGameEventRow;
-    void listener(supabaseRowToEnvelope(snake));
+    // trigger は常に `jsonb_build_object('record', row_to_json(new))` を送る
+    // ので `payload.record` は必ず存在する前提。fallback を置くと shape が
+    // 変わったときに silent に壊れるので、record が無ければ warn + drop。
+    const envelope = (payload as { record?: SupabaseGameEventRow } | null)
+      ?.record;
+    if (!envelope) {
+      console.warn(
+        "[realtime] broadcast payload missing .record — shape mismatch. Trigger out of sync?",
+        payload,
+      );
+      return;
+    }
+    void listener(supabaseRowToEnvelope(envelope));
   });
 
   void channel.subscribe();

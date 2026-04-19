@@ -38,7 +38,10 @@ create index idx_teams_owner on teams(owner_user_id);
 
 create table team_members (
   team_id uuid not null references teams(id) on delete cascade,
-  user_id uuid not null references auth.users(id) on delete cascade,
+  -- on delete restrict: auth.users 削除時に team_members は先に消えてほしくない。
+  -- games.created_by / game_events.author_user_id が restrict なので auth.users
+  -- の削除は実質ブロックされるが、履歴整合性を明示するためここも restrict。
+  user_id uuid not null references auth.users(id) on delete restrict,
   role team_role not null default 'scorer',
   joined_at timestamptz not null default now(),
   primary key (team_id, user_id)
@@ -162,6 +165,24 @@ $$;
 
 grant execute on function current_user_can_access_game(uuid) to authenticated;
 
+-- ゲームへの書き込み権限（scorer 以上）。game_events RLS の
+-- with check をシンプルに保つため。
+create or replace function current_user_can_write_game(p_game_id uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from games g
+    where g.id = p_game_id
+      and current_user_team_role(g.team_id) in ('owner','admin','scorer')
+  );
+$$;
+
+grant execute on function current_user_can_write_game(uuid) to authenticated;
+
 -- ---------------------- 招待コード redeem（§10.3）------------------------
 
 create or replace function redeem_invitation(p_code text)
@@ -235,6 +256,11 @@ begin
      and (tg_op = 'DELETE'
           or (tg_op = 'UPDATE' and new.role <> 'owner'::team_role))
   then
+    -- 同一チーム内の並列 owner 抜けをシリアライズする advisory lock。
+    -- hashtext で uuid → int8 に圧縮。team_id ごとに competing tx は
+    -- 直列化され、同時抜けで count=1 を両方が見て両方抜ける race を防ぐ。
+    perform pg_advisory_xact_lock(hashtext(old.team_id::text));
+
     select count(*) into v_remaining_owners
     from team_members
     where team_id = old.team_id
@@ -250,9 +276,18 @@ begin
 end;
 $$;
 
-create trigger trg_prevent_last_owner_leaving
-  before update or delete on team_members
+-- DELETE と「role 変更を伴う UPDATE」で 2 本に分けることで、role 以外の
+-- 列更新（joined_at など）では空振りさせる。when 句内で tg_op は参照
+-- できないため、UPDATE 側は old.role vs new.role の比較のみで絞る。
+create trigger trg_prevent_last_owner_leaving_delete
+  before delete on team_members
   for each row execute function prevent_last_owner_leaving();
+
+create trigger trg_prevent_last_owner_leaving_update
+  before update on team_members
+  for each row
+  when (old.role is distinct from new.role)
+  execute function prevent_last_owner_leaving();
 
 -- ----------------------- Realtime Broadcast（§9.1）-----------------------
 -- Supabase Realtime の Broadcast 機能を、row insert 時のトリガから
@@ -361,13 +396,12 @@ create policy game_events_select on game_events
 
 create policy game_events_insert on game_events
   for insert to authenticated
-  with check (current_user_can_access_game(game_id)
-              and author_user_id = (select auth.uid())
-              and current_user_team_role(
-                    (select team_id from games where id = game_id)
-                  ) in ('owner','admin','scorer'));
+  with check (current_user_can_write_game(game_id)
+              and author_user_id = (select auth.uid()));
 
--- append-only: update/delete は禁止。訂正は correction_of で append。
+-- append-only: update/delete は禁止。RLS で policy を与えないので default
+-- deny となるが、defense-in-depth として明示的に revoke もしておく。
+revoke update, delete on game_events from authenticated;
 
 -- invitations: 招待コードは SELECT 禁止（§10.3、列挙攻撃防止）、
 -- redeem は redeem_invitation() 経由のみ。owner/admin のみ作成可。
@@ -395,6 +429,7 @@ create policy invitation_attempts_select_own on invitation_attempts
 create or replace function touch_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at := now();

@@ -26,8 +26,13 @@ export async function refreshSupabaseSession(
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anonKey) {
-    // env 未設定時は middleware を no-op にして開発を阻害しない。
-    // 本番 build は env 無しでは起動できないので運用事故は起きない。
+    // 本番で env 未設定なら silent に unauthenticated 動作するのは事故の元。
+    // dev/test では no-op 許容、production では fail-closed で阻止する。
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "Supabase middleware: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY が production で未設定です。session refresh を行わずに動作継続するのはセキュリティリスクなので停止します。",
+      );
+    }
     return response;
   }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getScorebookDb } from "@/client/db/dexie";
+import { getScorebookDb } from "@/src/client/db/dexie";
 
 type Counts = {
   games: number;

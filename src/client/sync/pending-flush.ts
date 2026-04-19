@@ -28,8 +28,20 @@ export type FlushOptions = {
   endpoint?: string;
   /** 1 回 flush で処理する最大件数。既定 100。 */
   maxBatch?: number;
+  /**
+   * これ以上のリトライ回数を持つ row は flush 対象から除外する。
+   * 既定 10。超過した row は `pendingEvents` に残り、manual review UI で
+   * 人間が原因調査（payload 破損 / schema 不整合）する想定。
+   */
+  maxRetryCount?: number;
   /** 直列送信用 fetch。テスト差し込み可能。 */
   fetchImpl?: typeof fetch;
+  /**
+   * `Authorization: Bearer <token>` を送るための token プロバイダ。
+   * 未指定なら無認証。`/api/events` にサーバ側で Supabase session 認可が
+   * 入ったら必ず指定すること（現状未接続なので TODO）。
+   */
+  getAuthToken?: () => Promise<string | null> | string | null;
 };
 
 export async function flushPendingEvents(
@@ -38,7 +50,9 @@ export async function flushPendingEvents(
 ): Promise<FlushOutcome> {
   const endpoint = options.endpoint ?? "/api/events";
   const maxBatch = options.maxBatch ?? 100;
+  const maxRetryCount = options.maxRetryCount ?? 10;
   const fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
+  const getAuthToken = options.getAuthToken;
 
   const outcome: FlushOutcome = {
     attempted: 0,
@@ -48,16 +62,25 @@ export async function flushPendingEvents(
   };
 
   const pending = await db.pendingEvents
-    .orderBy("retryCount")
+    .where("retryCount")
+    .below(maxRetryCount)
     .limit(maxBatch)
-    .toArray();
+    .sortBy("retryCount");
+
+  const bearer =
+    typeof getAuthToken === "function" ? await getAuthToken() : null;
 
   for (const row of pending) {
     outcome.attempted += 1;
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (bearer) headers["Authorization"] = `Bearer ${bearer}`;
+
       const response = await fetchImpl(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(envelopeToSupabaseRow(row.envelope)),
       });
 
