@@ -9,8 +9,9 @@ type LoadState =
   | { kind: "ready"; game: GameRow | null }
   | { kind: "error"; message: string };
 
-// architecture §20.3: 打順数は 9-11 可変。Phase 3 placeholder では
-// 9 固定で描画し、Day 2 で game.lineup から動的に決める想定。
+// architecture §20.3: 打順数は 9-11 可変。Phase 3 placeholder では 9 固定
+// で描画し、Day 2 で gameEvents の substitution 累積から推定するか、または
+// GameRow に batterCount を追加して動的に決める想定。
 const DEFAULT_LINEUP = 9;
 const INNINGS = 9;
 
