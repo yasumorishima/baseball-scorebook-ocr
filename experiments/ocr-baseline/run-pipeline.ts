@@ -348,7 +348,14 @@ async function main(): Promise<void> {
   console.log(`Output: ${outDir}/${stem}.md / ${stem}.json`);
 }
 
-main().catch((err) => {
-  console.error("[run-pipeline] fatal:", err);
-  process.exit(1);
-});
+// ファイルを直接実行した時だけ main() を走らせる。
+// `import { parseApprovalFile } from "..."` のように test 等から import した際は
+// 副作用（process.exit / 標準入力の argv 解析）が発火しないようにガードする。
+// import.meta.url と process.argv[1] の正規化 URL が一致する場合のみエントリ実行。
+const entryUrl = new URL(`file://${resolve(process.argv[1] ?? "")}`).href;
+if (import.meta.url === entryUrl) {
+  main().catch((err) => {
+    console.error("[run-pipeline] fatal:", err);
+    process.exit(1);
+  });
+}
