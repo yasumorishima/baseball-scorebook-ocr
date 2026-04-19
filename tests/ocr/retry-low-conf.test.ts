@@ -240,4 +240,32 @@ describe("retryLowConfCells", () => {
     expect(Array.isArray(res)).toBe(true);
     expect(create).not.toHaveBeenCalled();
   });
+
+  it("all-dryRun path returns homogeneous array (invariant validation)", async () => {
+    // 全 call が dryRun である前提を実装側 assertion が守ること
+    const grid = makeGrid([
+      makeCell(1, 1, 0.2),
+      makeCell(2, 1, 0.3),
+      makeCell(3, 1, 0.4),
+    ]);
+    const create = vi.fn();
+    const res = await retryLowConfCells(
+      grid,
+      await makeSource(),
+      makeInningRects(),
+      10,
+      {
+        dryRun: true,
+        client: { messages: { create } } as never,
+        onLog: () => {},
+      },
+    );
+    expect(Array.isArray(res)).toBe(true);
+    if (Array.isArray(res)) {
+      // 3 セル分の dryRun payload を受け取る
+      expect(res.length).toBe(3);
+      // 全て dryRun フラグ付きで homogeneous
+      expect(res.every((r) => r.dryRun === true)).toBe(true);
+    }
+  });
 });

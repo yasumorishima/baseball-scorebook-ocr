@@ -45,24 +45,29 @@ export async function cropInnings(
   const totalsY = Math.round(H * layout.totalsRowBottom);
   const pitcherY = Math.round(H * layout.pitcherAreaBottom);
 
+  // 極小画像（テスト入力や検証時の 200×200 等）でも sharp.extract() が throw
+  // しないよう width/height に 1px 最小クランプを適用。実画像（2576px 長辺）では
+  // クランプは常に無効化される（全差分 ≥ 数十 px）。
+  const clamp = (v: number): number => Math.max(1, v);
+
   // ── 論理領域の pixel bounds ─────────────────────────────────
   const pageHeaderRect: Rect = {
     x: 0,
     y: 0,
-    width: rightStatsX,
-    height: pageHeaderY,
+    width: clamp(rightStatsX),
+    height: clamp(pageHeaderY),
   };
   const inningLabelsRect: Rect = {
     x: playerX,
     y: pageHeaderY,
-    width: rightStatsX - playerX,
-    height: headerY - pageHeaderY,
+    width: clamp(rightStatsX - playerX),
+    height: clamp(headerY - pageHeaderY),
   };
   const playerRect: Rect = {
     x: 0,
     y: headerY,
-    width: playerX,
-    height: playGridY - headerY,
+    width: clamp(playerX),
+    height: clamp(playGridY - headerY),
   };
   const playGridWidth = rightStatsX - playerX;
   const inningWidth = Math.floor(playGridWidth / layout.inningCount);
@@ -72,36 +77,37 @@ export async function cropInnings(
       x: playerX + i * inningWidth,
       y: headerY,
       // 最終列のみ playGridWidth % inningCount の余剰を吸収
-      width:
+      width: clamp(
         i === layout.inningCount - 1
           ? playGridWidth - i * inningWidth
           : inningWidth,
-      height: playGridY - headerY,
+      ),
+      height: clamp(playGridY - headerY),
     }),
   );
   const statsRect: Rect = {
     x: rightStatsX,
     y: 0,
-    width: W - rightStatsX,
-    height: totalsY,
+    width: clamp(W - rightStatsX),
+    height: clamp(totalsY),
   };
   const totalsRect: Rect = {
     x: playerX,
     y: playGridY,
-    width: rightStatsX - playerX,
-    height: totalsY - playGridY,
+    width: clamp(rightStatsX - playerX),
+    height: clamp(totalsY - playGridY),
   };
   const pitcherRect: Rect = {
     x: 0,
     y: totalsY,
-    width: rightStatsX,
-    height: pitcherY - totalsY,
+    width: clamp(rightStatsX),
+    height: clamp(pitcherY - totalsY),
   };
   const catcherRect: Rect = {
     x: rightStatsX,
     y: totalsY,
-    width: W - rightStatsX,
-    height: H - totalsY,
+    width: clamp(W - rightStatsX),
+    height: clamp(H - totalsY),
   };
 
   const [
@@ -198,6 +204,14 @@ function validateLayout(layout: ScorebookLayout): void {
     );
   }
   // §20.3: 公式 9 人・拡張 10-11 人を想定。上限 15 は preflight guard。
+  // NOTE: batterCount は cropInnings では **使用しない**。各イニング列は
+  // y 方向に打順 1..batterCount をまとめた 1 枚として切り出し、Stage 2
+  // （§20.6 / extractStage2Columns）が列画像を Opus に丸ごと渡して
+  // 11 セル分の CellRead[] を一括で返させる設計。crop 段階で行分割しない
+  // のは（1）OCR コストを 11 倍増やさないため、（2）列全体を見せた方が
+  // 打順連続性・アウトカウンタの判別精度が上がるため。
+  // batterCount はここでは型・下流 (Stage 2 user prompt) への受け渡し
+  // メタデータとしてのみ機能する。
   if (
     layout.batterCount < 1 ||
     layout.batterCount > 15 ||

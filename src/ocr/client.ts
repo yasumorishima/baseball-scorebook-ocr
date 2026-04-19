@@ -192,6 +192,9 @@ export async function callClaude<T = unknown>(
         });
         throw err;
       }
+      // Exponential backoff with jitter. 1000ms → 2000ms → 4000ms + [0, 250ms] のランダム加算。
+      // TODO(Day 2): Anthropic SDK の APIError.headers に Retry-After が含まれる
+      // 場合（429 rate limit）は優先値として採用する。現状は単純 exponential のみ。
       const delay =
         backoffBase * 2 ** (attempt - 1) + Math.random() * jitterMax;
       log({

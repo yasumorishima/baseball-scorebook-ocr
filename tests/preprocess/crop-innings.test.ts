@@ -236,4 +236,48 @@ describe("cropInnings (SEIBIDO_9104_WASEDA defaults)", () => {
       }),
     ).rejects.toThrow(/batterCount/);
   });
+
+  it("accepts batterCount boundary values (1 and 15)", async () => {
+    const img = await canvas(LANDSCAPE_W, LANDSCAPE_H);
+    // lower boundary 1
+    await expect(
+      cropInnings(img, {
+        layout: { ...SEIBIDO_9104_WASEDA, batterCount: 1 },
+      }),
+    ).resolves.toBeDefined();
+    // upper boundary 15
+    await expect(
+      cropInnings(img, {
+        layout: { ...SEIBIDO_9104_WASEDA, batterCount: 15 },
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects batterCount one past upper boundary (16)", async () => {
+    const img = await canvas(LANDSCAPE_W, LANDSCAPE_H);
+    await expect(() =>
+      cropInnings(img, {
+        layout: { ...SEIBIDO_9104_WASEDA, batterCount: 16 },
+      }),
+    ).rejects.toThrow(/batterCount/);
+  });
+
+  it("clamps rect dimensions to >=1 for extremely small images (no sharp.extract() throw)", async () => {
+    // 極小画像でも Math.max(1, ...) クランプで sharp.extract() が throw しない
+    const tiny = await canvas(50, 50);
+    const result = await cropInnings(tiny);
+    for (const r of [
+      result.meta.rects.pageHeader,
+      result.meta.rects.inningLabels,
+      result.meta.rects.player,
+      result.meta.rects.stats,
+      result.meta.rects.totals,
+      result.meta.rects.pitcher,
+      result.meta.rects.catcher,
+      ...result.meta.rects.innings,
+    ]) {
+      expect(r.width).toBeGreaterThanOrEqual(1);
+      expect(r.height).toBeGreaterThanOrEqual(1);
+    }
+  });
 });

@@ -155,6 +155,10 @@ const cellReadSchema = {
       type: "array" as const,
       items: { type: "string" as const },
       description: "Competing raw_notation interpretations; MUST have >= 2 entries if confidence < 0.7",
+      // NOTE: JSON Schema 側では minItems を硬く縛らない（conditional required は
+      // Anthropic tool schema のサポート外 + モデルが強制制約で出力を歪める副作用を避けるため）。
+      // 「confidence < 0.7 ⇒ alternatives.length >= 2」の検証は Zod 側の
+      // validateCellConsistency() で実施する（src/ocr/schemas.ts）。
     },
   },
   additionalProperties: false,
@@ -230,6 +234,11 @@ export const EXTRACT_COLUMN_CELLS_TOOL: Tool = {
       },
       column_quality: {
         type: "object",
+        // NOTE: ルート `required` には含めない（optional）が、オブジェクト自体を
+        // 返す場合は legibility/issues 両方必須とする。waseda-system の
+        // prompt 側で「Output column_quality」と指示しているため現実的には
+        // ほぼ返ってくるが、列全体が空セルの場合に無くても parse が通るよう
+        // トップレベルは optional のまま維持（Zod schemas.ts と整合）。
         required: ["legibility", "issues"],
         properties: {
           legibility: { type: "number", minimum: 0, maximum: 1 },

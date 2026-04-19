@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import sharp from "sharp";
 
 import {
+  DEFAULT_STAGE2_MAX_TOKENS,
   extractStage2Columns,
   MIN_COLUMN_LONG_EDGE,
   runWithConcurrency,
@@ -222,5 +223,33 @@ describe("extractStage2Columns", () => {
       (c) => c.type === "text",
     )?.text;
     expect(userText).toContain("11 batters");
+  });
+
+  it("uses DEFAULT_STAGE2_MAX_TOKENS (16000) by default to prevent truncation", async () => {
+    // docs/architecture.md §3.2 / §5.2: 11 打者 × evidence 出力で 4096 では切断リスク
+    expect(DEFAULT_STAGE2_MAX_TOKENS).toBe(16000);
+
+    const cols = [{ inning: 1, columnImage: await makeColumn(400, 1200) }];
+    const create = vi.fn(async () => fakeStage2Message(1, 10));
+    await extractStage2Columns(cols, "waseda", 10, {
+      client: { messages: { create } } as never,
+      onLog: () => {},
+    });
+    const calls = create.mock.calls as unknown as Array<[unknown]>;
+    const body = calls[0][0] as { max_tokens: number };
+    expect(body.max_tokens).toBe(16000);
+  });
+
+  it("allows explicit maxTokens override", async () => {
+    const cols = [{ inning: 1, columnImage: await makeColumn(400, 1200) }];
+    const create = vi.fn(async () => fakeStage2Message(1, 10));
+    await extractStage2Columns(cols, "waseda", 10, {
+      client: { messages: { create } } as never,
+      onLog: () => {},
+      maxTokens: 8000,
+    });
+    const calls = create.mock.calls as unknown as Array<[unknown]>;
+    const body = calls[0][0] as { max_tokens: number };
+    expect(body.max_tokens).toBe(8000);
   });
 });

@@ -138,8 +138,20 @@ export async function retryLowConfCells(
     return { parsed, usage: res.usage };
   });
 
-  // dryRun が混ざる場合は既存 grid を返す型不可。呼び出し側仕様: dryRun 時は payload 群を返却
-  if (results.some((r) => "dryRun" in r)) {
+  // dryRun フラグは retryLowConfCells の全 callClaude() 呼び出しに一律
+  // 伝播される設計（options.dryRun / options.client / options.onLog を spread）。
+  // 従って results は **全件 dryRun** か **全件実呼び出し** のいずれか homogeneous
+  // に限られる。partial dryRun は内部呼び出しパスの不整合を意味するため
+  // invariant violation として明示エラーにする（将来のリファクタ安全網）。
+  const dryRunCount = results.filter((r) => "dryRun" in r).length;
+  if (dryRunCount > 0 && dryRunCount !== results.length) {
+    throw new Error(
+      `retryLowConfCells: partial dryRun detected (${dryRunCount}/${results.length}). ` +
+        "dryRun flag must propagate uniformly to all internal callClaude() invocations.",
+    );
+  }
+  if (dryRunCount === results.length) {
+    // 全件 dryRun: payload 群を返却（呼び出し側仕様）
     return results.filter((r): r is ClaudeDryRunResult => "dryRun" in r);
   }
 

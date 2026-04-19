@@ -51,6 +51,16 @@ export const MIN_COLUMN_LONG_EDGE = 300;
 /** Stage 2 の既定同時実行数（Opus 4.7 RPM 節約 + 13 列を 5 分以内に収めるバランス） */
 export const DEFAULT_STAGE2_CONCURRENCY = 3;
 
+/**
+ * Stage 2 1 列あたりの既定 max_tokens。
+ *
+ * docs/architecture.md §3.2 / §5.2 準拠で 16000 に設定。
+ * 11 打者 × ({各 CellRead の bare fields ~200 tok} + {evidence 文 + alternatives}) を
+ * 安全に収められる余裕。4096 では `stop_reason:"max_tokens"` で tool_use block が
+ * truncated → Zod parse 失敗 → 実費無駄のリスクが高いため、既定を 16000 に引き上げる。
+ */
+export const DEFAULT_STAGE2_MAX_TOKENS = 16000;
+
 export type Stage2Input = {
   /** イニング番号（1-based） */
   inning: number;
@@ -71,7 +81,11 @@ export type Stage2ExtractOptions = ClaudeCallOptions & {
   concurrency?: number;
   /** 列画像の最小長辺 px（既定 300、Opus 4.7 最小規定） */
   minLongEdge?: number;
-  /** max_tokens（既定 4096、10 人分の CellRead + evidence でおよそ十分） */
+  /**
+   * max_tokens。既定は DEFAULT_STAGE2_MAX_TOKENS (16000)。
+   * docs/architecture.md §3.2 / §5.2 で 11 打者 × evidence + alternatives の出力を
+   * 安全に収める値として規定。4096 では途中切断のリスクがある。
+   */
   maxTokens?: number;
 };
 
@@ -107,7 +121,7 @@ export async function extractStage2Columns(
         userText: buildUserText({ inning: col.inning, batterCount }),
         tools: [EXTRACT_COLUMN_CELLS_TOOL],
         toolName,
-        maxTokens: options.maxTokens ?? 4096,
+        maxTokens: options.maxTokens ?? DEFAULT_STAGE2_MAX_TOKENS,
       },
       options,
     );

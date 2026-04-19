@@ -71,6 +71,10 @@ export function mergeStage2Results(
         });
         grid[bi][ii] = cell;
       } else {
+        // tie-breaking: 厳密 `>` で比較するため、同値の場合は既存値を維持（先入れ優先）。
+        // 初回 OCR 時点でイニング順・打順順に報告される想定のため、衝突が起きるのは
+        // Day 2 で overlap 列を導入した場合のみ。retry-low-conf 側は `>=` で「新しい
+        // 読み取りを優先」するポリシー（別ロジック）。
         conflicts.push({
           coord: { batting_order: cell.batting_order, inning: cell.inning },
           kept: existing,

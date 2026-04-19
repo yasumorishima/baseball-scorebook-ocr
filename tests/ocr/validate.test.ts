@@ -199,4 +199,127 @@ describe("validateGrid", () => {
     expect(report.perInningOuts[0]).toBe(3);
     expect(report.battingOrderSequence[0]).toEqual([1, 2, 3]);
   });
+
+  // ── #9 extras_outcome_conflict ───────────────────────────
+  describe("extras_outcome_conflict", () => {
+    it("warns when outcome=sac_bunt and extras.SH=true (double representation)", () => {
+      const grid = makeGrid([
+        cell(1, 1, "sac_bunt", 0, 1, {
+          extras: { ...EXTRAS, SH: true },
+        }),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      const w = report.warnings.find((v) => v.kind === "extras_outcome_conflict");
+      expect(w).toBeDefined();
+      expect(w?.message).toContain("sac_bunt");
+      expect(w?.message).toContain("SH");
+    });
+
+    it("warns when outcome=walk and extras.HBP=true (mutually exclusive)", () => {
+      const grid = makeGrid([
+        cell(1, 1, "walk", 1, null, {
+          extras: { ...EXTRAS, HBP: true },
+        }),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((v) => v.kind === "extras_outcome_conflict"),
+      ).toBeDefined();
+    });
+
+    it("warns when multiple extras flags are set simultaneously (SH + SF)", () => {
+      const grid = makeGrid([
+        cell(1, 1, "ground_out", 0, 1, {
+          extras: { ...EXTRAS, SH: true, SF: true },
+        }),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      const w = report.warnings.find((v) => v.kind === "extras_outcome_conflict");
+      expect(w).toBeDefined();
+      expect(w?.message).toContain("multiple extras flags");
+    });
+
+    it("does NOT warn for canonical outcome-only representation (sac_bunt with no extras)", () => {
+      const grid = makeGrid([cell(1, 1, "sac_bunt", 0, 1)]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((v) => v.kind === "extras_outcome_conflict"),
+      ).toBeUndefined();
+    });
+
+    it("does NOT warn for strikeout + strikeout_reached (legitimate 振り逃げ combo)", () => {
+      const grid = makeGrid([
+        cell(1, 1, "strikeout_swinging", 1, null, {
+          extras: { ...EXTRAS, strikeout_reached: true },
+        }),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((v) => v.kind === "extras_outcome_conflict"),
+      ).toBeUndefined();
+    });
+  });
+
+  // ── #10 sacrifice_batter_scored ──────────────────────────
+  describe("sacrifice_batter_scored", () => {
+    it("warns when outcome=sac_bunt and reached_base=4", () => {
+      const grid = makeGrid([cell(1, 1, "sac_bunt", 4, null)]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((v) => v.kind === "sacrifice_batter_scored"),
+      ).toBeDefined();
+    });
+
+    it("warns when extras.SF=true and reached_base=4 even without sac_fly outcome", () => {
+      const grid = makeGrid([
+        cell(1, 1, "fly_out", 4, null, {
+          extras: { ...EXTRAS, SF: true },
+        }),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((v) => v.kind === "sacrifice_batter_scored"),
+      ).toBeDefined();
+    });
+
+    it("does NOT warn for canonical sac_bunt with reached_base=0 (batter out)", () => {
+      const grid = makeGrid([cell(1, 1, "sac_bunt", 0, 1)]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((v) => v.kind === "sacrifice_batter_scored"),
+      ).toBeUndefined();
+    });
+  });
+
+  // ── #8 empty_cell_in_progress のガード ───────────────────
+  describe("empty_cell_in_progress guards", () => {
+    it("does NOT warn for empty cells after 3 outs in that inning", () => {
+      const grid = makeGrid([
+        cell(1, 1, "ground_out", 0, 1),
+        cell(2, 1, "fly_out", 0, 2),
+        cell(3, 1, "strikeout_swinging", 0, 3),
+        // batter 4 空のまま（3 アウト済み）
+        cell(5, 1, "fly_out", 0, null), // これは有効でないが empty_cell_in_progress は発火しない
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      // empty_cell_in_progress は 3 アウト到達後のイニングでは発火しない
+      expect(
+        report.warnings.filter((w) => w.kind === "empty_cell_in_progress"),
+      ).toHaveLength(0);
+    });
+
+    it("does NOT warn for empty cells in innings beyond lastPlayedInning", () => {
+      const grid = makeGrid([
+        cell(1, 1, "ground_out", 0, 1),
+        cell(2, 1, "fly_out", 0, 2),
+        cell(3, 1, "strikeout_swinging", 0, 3),
+        // inning 2 は未開始（lastPlayedInning=1）
+        cell(5, 2, "fly_out", 0, null),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.filter((w) => w.kind === "empty_cell_in_progress"),
+      ).toHaveLength(0);
+    });
+  });
 });

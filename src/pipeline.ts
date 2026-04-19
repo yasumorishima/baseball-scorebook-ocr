@@ -60,10 +60,14 @@ import type {
 import type { Style } from "./types/style.js";
 
 // Opus 4.7 公式料金（USD / Mtok）
+//
+// 価格は docs/architecture.md §9（Cost model）に準拠。改定時は docs 側を
+// 正として両方を同時更新すること。環境変数 override は将来対応予定。
+// https://www.anthropic.com/pricing で公開値と突合可能。
 const PRICE_INPUT_PER_MTOK = 15;
 const PRICE_OUTPUT_PER_MTOK = 75;
-const PRICE_CACHE_WRITE_PER_MTOK = 18.75; // 1.25x
-const PRICE_CACHE_READ_PER_MTOK = 1.5; // 0.1x
+const PRICE_CACHE_WRITE_PER_MTOK = 18.75; // 1.25x (ephemeral write)
+const PRICE_CACHE_READ_PER_MTOK = 1.5; // 0.1x (cache hit)
 
 export type PipelineInput = {
   /** 画像 Buffer を渡すか、ファイルパスを指定 */
@@ -205,7 +209,10 @@ export async function runPipeline(
     const s1 = await detectStyle(landscapeBuf, callOpts);
     if ("dryRun" in s1) {
       dryRunPayloads.push(s1.payload);
-      style = "waseda"; // fallback for dryRun continuation
+      // dryRun 経路では Stage 2 の payload 数を実運用と一致させるため waseda を
+      // 既定にする（= 14 件 = Stage 1 + 13 inning × Stage 2）。tests/pipeline.test.ts:300
+      // の期待値もこの仕様に合わせている。
+      style = "waseda";
     } else {
       style = s1.style;
       styleFallbackApplied = s1.fallbackApplied;
@@ -304,10 +311,7 @@ export async function runPipeline(
       finalGrid = retryRes.grid;
       reviewFlags = retryRes.reviewFlags;
       accumulateUsage(totalUsage, retryRes.totalUsage);
-      retryAttempts = retryRes.retried.reduce(
-        (s, _) => s + 1,
-        0,
-      );
+      retryAttempts = retryRes.retried.length;
     }
   }
   phaseTimings.retry = Date.now() - t7;
@@ -385,7 +389,9 @@ export function estimateCost(usage: UsageStats): PipelineCostEstimate {
   const cacheRead =
     (usage.cache_read_input_tokens / 1_000_000) * PRICE_CACHE_READ_PER_MTOK;
   const total = input + output + cacheWrite + cacheRead;
-  const toCents = (x: number): number => Math.round(x * 100_00) / 100; // USD → 0.01 cent precision
+  // USD → cents に変換。100 倍してセント、さらに 100 倍して 0.01 セント精度で丸め、
+  // 最後に 100 で割ってセントに戻す（実質的に Math.round(x * 10000) / 100）。
+  const toCents = (x: number): number => Math.round(x * 10_000) / 100;
   return {
     totalUsdCents: toCents(total),
     breakdown: {

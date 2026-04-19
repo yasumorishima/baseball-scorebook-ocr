@@ -106,4 +106,36 @@ describe("normalize", () => {
     expect(out.sentSize.height).toBeGreaterThan(out.sentSize.width);
     expect(out.sentSize).toEqual({ width: 800, height: 1200 });
   });
+
+  it("auto-rotates per EXIF orientation=8 (270° CW / 90° CCW)", async () => {
+    // EXIF Orientation=8 = カメラが 90° 左回転（= 270° CW）で保存、
+    // 復元時は 90° CW 回転が必要。sharp().rotate() が自動処理する。
+    // Orientation=6 と対称のケースで、rotate() の分岐が両方向に働くか検証。
+    const landscapeRaw = await sharp({
+      create: { width: 1200, height: 800, channels: 3, background: { r: 80, g: 40, b: 120 } },
+    })
+      .withMetadata({ orientation: 8 })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+
+    const out = await normalize(landscapeRaw);
+    // 1200×800 landscape → orientation=8 適用後 800×1200 portrait
+    expect(out.sentSize.height).toBeGreaterThan(out.sentSize.width);
+    expect(out.sentSize).toEqual({ width: 800, height: 1200 });
+  });
+
+  it("auto-rotates per EXIF orientation=3 (180°)", async () => {
+    // Orientation=3 = 180° 回転。幅高さは入れ替わらないが内容が上下反転する。
+    // 見た目の px サイズ検証のみ可能（ピクセル内容の反転は別途確認必要）。
+    const raw = await sharp({
+      create: { width: 1000, height: 600, channels: 3, background: { r: 10, g: 200, b: 10 } },
+    })
+      .withMetadata({ orientation: 3 })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+
+    const out = await normalize(raw);
+    // 180° なので width/height は元と同じ (1000×600 < 2576 長辺のため resize 無効)
+    expect(out.sentSize).toEqual({ width: 1000, height: 600 });
+  });
 });

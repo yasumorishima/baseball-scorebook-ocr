@@ -3,11 +3,13 @@
  *
  * docs/architecture.md §6.1 / §6.2 準拠。
  *
- * 検査 8 種のうち Day 1 で実装するのは 4 種:
+ * 検査 8 種のうち Day 1 で実装するのは 4 種 + 派生 2 種:
  *   ✓ #1 outs_per_inning               ≤3 per inning; =3 except last unfinished
  *   ✓ #2 batting_order_continuity      打順連続性
  *   ✓ #3 reached_base_outcome_mismatch outcome ↔ reached_base 整合
  *   ✓ #8 empty_cell_in_progress        進行中イニングの空セル warning
+ *   ✓ #9 extras_outcome_conflict        outcome ↔ extras フラグの排他違反（Single-representation）
+ *   ✓ #10 sacrifice_batter_scored      犠打/犠飛で打者自身が得点 = 規則逸脱
  *
  * Day 2 で追加:
  *   - #4 diamond_reached_base_mismatch （菱形観測値 vs reached_base、model 側 CoT で代替中）
@@ -182,7 +184,11 @@ export function validateGrid(
   // ── #8 empty_cell_in_progress ────────────────────────────
   // 対象: 進行中の試合で途中に空セルがある場合
   //   同一イニングで batting_order k が埋まっているが k-1 が空 → warning
+  // ガード: 3 アウト到達済みイニング（または lastPlayedInning を過ぎたイニング）は
+  //   スキップ（代打・継投・3 アウト後の空白は正常）。
   for (let ii = 0; ii < inningCount; ii++) {
+    if (perInningOuts[ii] >= 3) continue;
+    if (ii + 1 > lastPlayedInning) continue;
     for (let bi = 1; bi < batterCount; bi++) {
       const cur = grid[bi][ii];
       const prev = grid[bi - 1][ii];
@@ -199,6 +205,54 @@ export function validateGrid(
                 { batting_order: bi + 1, inning: ii + 1 },
               ],
             },
+          ),
+        );
+      }
+    }
+  }
+
+  // ── #9 extras_outcome_conflict ───────────────────────────
+  // outcome と extras フラグは排他（waseda-system Single-representation rule）。
+  // 不整合は OCR プロンプト逸脱の兆候として warning 化。
+  // compute.ts は extras 優先で集計を続行するので実集計は正しい。
+  for (let bi = 0; bi < batterCount; bi++) {
+    for (let ii = 0; ii < inningCount; ii++) {
+      const cell = grid[bi][ii];
+      if (cell == null || cell.outcome == null) continue;
+
+      const conflicts = detectExtrasOutcomeConflicts(cell.outcome, cell.extras);
+      for (const desc of conflicts) {
+        warnings.push(
+          violation(
+            "extras_outcome_conflict",
+            "warning",
+            `cell (${cell.batting_order}, ${cell.inning}): ${desc}`,
+            { cells: [{ batting_order: cell.batting_order, inning: cell.inning }] },
+          ),
+        );
+      }
+    }
+  }
+
+  // ── #10 sacrifice_batter_scored ──────────────────────────
+  // 犠打・犠飛の打者本人は規則上アウト or 一塁残のみ。reached_base=4 は
+  // 複数エラーを経由した理論上の例外的な経路のみで、通常は OCR 誤読。
+  for (let bi = 0; bi < batterCount; bi++) {
+    for (let ii = 0; ii < inningCount; ii++) {
+      const cell = grid[bi][ii];
+      if (cell == null) continue;
+      const isSac =
+        cell.outcome === "sac_bunt" ||
+        cell.outcome === "sac_fly" ||
+        cell.extras.SH ||
+        cell.extras.SF;
+      if (isSac && cell.reached_base === 4) {
+        warnings.push(
+          violation(
+            "sacrifice_batter_scored",
+            "warning",
+            `cell (${cell.batting_order}, ${cell.inning}): sacrifice with reached_base=4 (scored). Unusual; verify OCR reading.`,
+            { cells: [{ batting_order: cell.batting_order, inning: cell.inning }] },
           ),
         );
       }
@@ -276,4 +330,61 @@ function violation(
     ...(extra.cells ? { cells: extra.cells } : {}),
     ...(extra.inning != null ? { inning: extra.inning } : {}),
   };
+}
+
+/**
+ * outcome と extras フラグの排他規則違反を検出する。
+ *
+ * 想定する排他ペア（waseda-system.ts Single-representation rule）:
+ *   - sac_bunt は outcome のみ、extras.SH は false
+ *   - sac_fly は outcome のみ、extras.SF は false
+ *   - hbp は outcome のみ、extras.HBP は false
+ *   - fielders_choice は outcome のみ、extras.FC は false
+ *   - error は outcome のみ（extras.error_fielder に守備番号を入れる）
+ *   - 振り逃げ（strikeout_* + extras.strikeout_reached=true）は例外で共存許容
+ *
+ * 加えて、OCR が矛盾した組み合わせを返した場合も検出:
+ *   - walk + HBP=true
+ *   - 複数の extras フラグが同時 true（SH と SF など）
+ */
+function detectExtrasOutcomeConflicts(
+  outcome: Outcome,
+  extras: CellRead["extras"],
+): string[] {
+  const issues: string[] = [];
+
+  // outcome と extras フラグの二重表現
+  if (outcome === "sac_bunt" && extras.SH) {
+    issues.push("outcome=sac_bunt and extras.SH=true (use only one)");
+  }
+  if (outcome === "sac_fly" && extras.SF) {
+    issues.push("outcome=sac_fly and extras.SF=true (use only one)");
+  }
+  if (outcome === "hbp" && extras.HBP) {
+    issues.push("outcome=hbp and extras.HBP=true (use only one)");
+  }
+  if (outcome === "fielders_choice" && extras.FC) {
+    issues.push("outcome=fielders_choice and extras.FC=true (use only one)");
+  }
+
+  // 相反する outcome × extras 組み合わせ
+  if (outcome === "walk" && extras.HBP) {
+    issues.push("outcome=walk but extras.HBP=true (mutually exclusive)");
+  }
+  if (outcome === "hbp" && extras.SH) {
+    issues.push("outcome=hbp but extras.SH=true (mutually exclusive)");
+  }
+
+  // 複数 extras フラグが同時 true（排他カテゴリ）
+  const flagCount = (extras.SH ? 1 : 0) + (extras.SF ? 1 : 0) + (extras.HBP ? 1 : 0);
+  if (flagCount >= 2) {
+    const names = [
+      extras.SH && "SH",
+      extras.SF && "SF",
+      extras.HBP && "HBP",
+    ].filter(Boolean);
+    issues.push(`multiple extras flags set simultaneously: ${names.join(", ")}`);
+  }
+
+  return issues;
 }

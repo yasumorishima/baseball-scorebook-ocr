@@ -67,6 +67,12 @@ function parseArgs(argv: string[]): CliArgs {
     } else if (raw.startsWith("--out=")) {
       outDir = raw.split("=", 2)[1];
     } else if (!raw.startsWith("--")) {
+      // 位置引数は image_path のみ。複数渡された場合は silent 上書きせず fail-closed。
+      if (imagePath) {
+        throw new Error(
+          `multiple positional arguments are not allowed: already got "${imagePath}", received "${raw}"`,
+        );
+      }
       imagePath = raw;
     }
   }
@@ -90,6 +96,50 @@ function parseArgs(argv: string[]): CliArgs {
   };
 }
 
+/**
+ * `.scorebook-test-approved` ファイルの想定フォーマット（docs/architecture.md §15）:
+ *
+ *   UNLOCK_UNTIL=2026-04-21T23:59:59+09:00
+ *   REASON=First real API verification after Phase A-E completion
+ *
+ * - UNLOCK_UNTIL は ISO 8601 datetime（タイムゾーン任意）で、現在時刻がこの値を
+ *   過ぎている場合は再作成が必要（古い承認を転用した実行を防ぐ）。
+ * - REASON は非空文字列。空や欠落はゲートをパスさせない。
+ * - block-scorebook-api-call hook と CLI の二重チェックで、どちらか片方が
+ *   bypass されても課金を止める設計。
+ */
+export type ApprovalFields = {
+  UNLOCK_UNTIL: string;
+  REASON: string;
+};
+
+export function parseApprovalFile(content: string): ApprovalFields {
+  const fields: Partial<ApprovalFields> = {};
+  const lines = content.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq < 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim();
+    if (key === "UNLOCK_UNTIL" || key === "REASON") {
+      fields[key] = value;
+    }
+  }
+  if (!fields.UNLOCK_UNTIL) {
+    throw new Error(
+      ".scorebook-test-approved is missing required field: UNLOCK_UNTIL=<ISO datetime>",
+    );
+  }
+  if (!fields.REASON) {
+    throw new Error(
+      ".scorebook-test-approved is missing required field: REASON=<non-empty string>",
+    );
+  }
+  return fields as ApprovalFields;
+}
+
 function checkApprovalGate(args: CliArgs): void {
   if (args.dryRun) return;
   const approvalFile = resolve(process.cwd(), ".scorebook-test-approved");
@@ -98,15 +148,50 @@ function checkApprovalGate(args: CliArgs): void {
       "[run-pipeline] real API call is blocked.\n" +
         "  - Use --dry-run or DRY_RUN=1 for a no-cost smoke test.\n" +
         "  - To authorize a real call, create `.scorebook-test-approved`\n" +
-        "    at the repo root with UNLOCK_UNTIL and REASON lines.\n" +
+        "    at the repo root with UNLOCK_UNTIL=<ISO datetime> and REASON=<string> lines.\n" +
         "  - See docs/architecture.md §15.",
     );
     process.exit(2);
   }
+
+  // 承認ファイルの内容を fail-closed にパース・検証する。
+  // hook が配置されていない Codespace 等の環境でも CLI レイヤで確実に止める。
+  let fields: ApprovalFields;
+  try {
+    const content = readFileSync(approvalFile, "utf8");
+    fields = parseApprovalFile(content);
+  } catch (e) {
+    console.error(
+      `[run-pipeline] .scorebook-test-approved parse failed: ${(e as Error).message}`,
+    );
+    process.exit(2);
+  }
+
+  const unlockUntil = new Date(fields.UNLOCK_UNTIL);
+  if (Number.isNaN(unlockUntil.getTime())) {
+    console.error(
+      `[run-pipeline] .scorebook-test-approved has invalid UNLOCK_UNTIL="${fields.UNLOCK_UNTIL}" ` +
+        "(must be ISO 8601 datetime, e.g., 2026-04-21T23:59:59+09:00)",
+    );
+    process.exit(2);
+  }
+  const now = new Date();
+  if (now.getTime() > unlockUntil.getTime()) {
+    console.error(
+      `[run-pipeline] .scorebook-test-approved has expired: UNLOCK_UNTIL=${fields.UNLOCK_UNTIL} (now=${now.toISOString()}).\n` +
+        "  - Delete and re-create the file with a future UNLOCK_UNTIL to re-authorize.",
+    );
+    process.exit(2);
+  }
+
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error("[run-pipeline] ANTHROPIC_API_KEY env var is required for real calls.");
     process.exit(2);
   }
+
+  console.log(
+    `[run-pipeline] approval gate passed. UNLOCK_UNTIL=${fields.UNLOCK_UNTIL}, REASON="${fields.REASON}"`,
+  );
 }
 
 function renderDryRunMarkdown(result: PipelineDryRun): string {
