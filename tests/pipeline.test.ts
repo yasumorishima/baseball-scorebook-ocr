@@ -32,7 +32,22 @@ const BLANK_EXTRAS = {
   strikeout_reached: false,
 };
 
-function blankCells(inning: number, batterCount: number) {
+type MockCell = {
+  batting_order: number;
+  inning: number;
+  raw_notation: string | null;
+  outcome: string | null;
+  fielders_involved: number[] | null;
+  reached_base: number | null;
+  out_count_after: number | null;
+  pitch_count: null;
+  extras: typeof BLANK_EXTRAS;
+  evidence: string;
+  confidence: number;
+  alternatives: string[];
+};
+
+function blankCells(inning: number, batterCount: number): MockCell[] {
   return Array.from({ length: batterCount }, (_, i) => ({
     batting_order: i + 1,
     inning,
