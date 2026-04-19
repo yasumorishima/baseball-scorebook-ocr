@@ -10,9 +10,11 @@
  * client 生成のみ）。
  */
 
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+
+type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 export async function createSupabaseServerClient(): Promise<SupabaseClient> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -30,7 +32,7 @@ export async function createSupabaseServerClient(): Promise<SupabaseClient> {
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet: CookieToSet[]) {
         // Server Component からは cookie を書けない（throw する）ので
         // try/catch で握りつぶす。middleware.ts 側で session refresh を
         // 担当するため、この経路で書けなくても session は維持される。
