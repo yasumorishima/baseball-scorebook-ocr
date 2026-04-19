@@ -20,6 +20,12 @@ export type WasedaFewshotExample = {
     extras: Record<string, unknown>;
     evidence: string;
     confidence: number;
+    /**
+     * confidence < 0.7 の低信頼セルで最低 2 件埋める必要あり（Zod
+     * CellReadSchema 要件）。高 confidence 例では省略可（Stage 2 実出力では
+     * `alternatives: []` が推奨）だが、低 conf 例では必ず 2 件以上を書く。
+     */
+    alternatives?: string[];
   };
   /** 記法の解説（プロンプト説明用） */
   explanation: string;

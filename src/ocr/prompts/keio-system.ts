@@ -58,9 +58,10 @@ const KEIO_NOTATION_REFERENCE = `## Keio / NPB-style scorebook notation (§2.2 r
 
 ### Dropped-third-strike rule (keio-specific, important)
 When the cell shows plain \`K\` (not \`SO\`), the batter reached 1B on a dropped third strike:
-- \`outcome\` = \`strikeout_swinging\` or \`strikeout_looking\` (whichever seems right)
+- \`outcome\` = **default to \`strikeout_swinging\`** (keio K standalone carries no swing/look info; only use \`strikeout_looking\` when adjacent marks clearly indicate a called third strike)
 - \`reached_base\` = 1
 - \`extras.strikeout_reached\` = **true**
+- \`out_count_after\` = **null** (the batter reached base safely; this play is NOT an out)
 AB still counts, SO still increments, but 1B shading should be present.
 
 ### When in doubt
@@ -111,6 +112,7 @@ ${renderKeioFewshotBlock(fewshot)}
 
 **outcome と extras フラグは排他**にしてください:
 - 犠打は **outcome="sac_bunt"** のみ、**extras.SH=false**。keio では ◇ が本来 infield hit を意味するので、ここで間違って SH=true を立てると二重計上。
+- NOTE: keio 独自の sac_bunt 表記は Day 1 時点で確定していないため、**現物に犠打記号（例えば waseda と同じ "犠" kanji）が現れた場合は outcome="sac_bunt" + confidence ≤ 0.7 + alternatives にその解釈を並記**する方針（Day 2 で keio 現物サンプル入手後に校正）。
 - 犠飛は **outcome="sac_fly"** のみ、**extras.SF=false**。
 - 死球は **outcome="hbp"** のみ、**extras.HBP=false**。
 - 野手選択は **outcome="fielders_choice"** のみ、**extras.FC=false**。

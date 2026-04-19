@@ -41,6 +41,8 @@ For this Day-1 chiba prompt you may treat the following as waseda-compatible:
 - 1B / 2B / 3B / HR for clean hits
 - 6-3 / 4-3 / 5-4-3 hyphenated fielding chains
 - Diamond shading (upper-right=1B, lower-right=2B, lower-left=3B, upper-left/center=scored)
+- **Strikeout default**: apply waseda \`K\` = \`strikeout_swinging\` and \`逆K\` / \`Kc\` = \`strikeout_looking\`. (Keio-style \`SO\` vs \`K\` split is unknown in chiba; see caution section below.)
+- **Walk default**: apply waseda \`B\` = walk. If the mark is clearly \`BB\`, lower confidence and list both walk interpretations in alternatives.
 
 ## Where to be cautious (apply low confidence)
 

@@ -86,6 +86,22 @@ describe("buildKeioSystemPrompt", () => {
   });
 });
 
+describe("KEIO_FEWSHOT invariants", () => {
+  it("ensures every low-confidence example (conf<0.7) carries alternatives >= 2", () => {
+    for (const ex of KEIO_FEWSHOT) {
+      if (ex.expected.confidence < 0.7) {
+        const alts = ex.expected.alternatives ?? [];
+        expect(alts.length).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it("defaults keio K (dropped-third-strike) to strikeout_swinging (not looking)", () => {
+    const kExample = KEIO_FEWSHOT.find((ex) => ex.rawNotation === "K");
+    expect(kExample?.expected.outcome).toBe("strikeout_swinging");
+  });
+});
+
 describe("renderKeioFewshotBlock", () => {
   it("wraps each example in an <example> block with raw_notation + expected_output", () => {
     const block = renderKeioFewshotBlock();

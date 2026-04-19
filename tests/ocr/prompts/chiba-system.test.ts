@@ -79,6 +79,17 @@ describe("CHIBA_FEWSHOT", () => {
     expect(unknown?.expected.out_count_after).toBeNull();
   });
 
+  it("ensures every low-confidence example (conf<0.7) carries alternatives >= 2", () => {
+    // CellReadSchema 要件と Single-representation rule の保護。
+    // Day 2 で新規 example を足したときに alternatives 欠落を静的検出する。
+    for (const ex of CHIBA_FEWSHOT) {
+      if (ex.expected.confidence < 0.7) {
+        const alts = ex.expected.alternatives ?? [];
+        expect(alts.length).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
   it("keeps expected JSON strictly parseable for every example", () => {
     for (const ex of CHIBA_FEWSHOT) {
       const json = JSON.stringify(ex.expected, null, 2);

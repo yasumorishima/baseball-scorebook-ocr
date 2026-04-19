@@ -91,11 +91,11 @@ export const KEIO_FEWSHOT: KeioFewshotExample[] = [
       out_count_after: null,
       extras: { ...EMPTY_EXTRAS, strikeout_reached: true },
       evidence:
-        "'K' in keio notation = strikeout + batter reached 1B on dropped third strike. This differs from waseda where K = ordinary strikeout swinging.",
+        "'K' in keio notation = strikeout + batter reached 1B on dropped third strike. Defaulting to strikeout_swinging (keio K standalone has no swing/look information; use swinging unless adjacent marks disambiguate). This differs from waseda where K = ordinary strikeout swinging. Note out_count_after stays null: the batter reached 1B safely, so this play is NOT an out.",
       confidence: 0.85,
     },
     explanation:
-      "Keio-specific: K without SO means the catcher dropped the 3rd strike and batter safely reached 1B. AB still counts, SO still increments, and strikeout_reached=true (so diamond_reached_base shows 1B filled upper-right).",
+      "Keio-specific: K without SO means the catcher dropped the 3rd strike and batter safely reached 1B. Stats-layer behavior: AB still counts, SO still increments, strikeout_reached=true (diamond shows 1B filled upper-right). out_count_after is null because reaching base is not an out. Choose outcome=strikeout_swinging by default since keio K alone carries no swing/look info (this is the only single-representation exception where outcome + extras flag coexist without double-counting).",
   },
   {
     rawNotation: "BB",

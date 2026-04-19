@@ -65,6 +65,9 @@ export const CHIBA_FEWSHOT: ChibaFewshotExample[] = [
       "Flyout shorthand is safe to inherit from waseda. Lower confidence slightly because chiba references are sparse.",
   },
   {
+    // 「?」は実在記法ではなく、chiba-specific で waseda/keio いずれにも
+    // 当てはまらない未確定マークを表す didactic placeholder。
+    // Day 2 で chiba 現物画像が入ったら該当する現物記号（スタンプや地域記法）に差し替える。
     rawNotation: "?",
     expected: {
       raw_notation: "?",
@@ -76,9 +79,16 @@ export const CHIBA_FEWSHOT: ChibaFewshotExample[] = [
       evidence:
         "Mark is chiba-specific and not recognized by this stub prompt. Reporting outcome=unknown with low confidence and listing waseda/keio alternatives.",
       confidence: 0.4,
+      // confidence < 0.7 の例は alternatives を必ず 2 件以上埋める必要がある
+      // （CellReadSchema 要件、Single-representation rule の補助）。
+      // 最低 2 件 + 実運用的に考えられる waseda/keio 候補を並記する。
+      alternatives: [
+        "possibly waseda ground_out (e.g., I3) — apply waseda rules with confidence ~0.6",
+        "possibly keio infield hit (◇{fielder}) — single, reached_base=1",
+      ],
     },
     explanation:
-      "When a mark does not match waseda or keio clearly, stay humble: outcome=unknown, confidence < 0.5, alternatives=['possibly waseda ...', 'possibly keio ...']. Day 2 will tighten this once real chiba samples are collected.",
+      "Placeholder for any chiba-specific mark not covered by waseda/keio. When a mark doesn't match cleanly, stay humble: outcome=unknown, confidence < 0.5, and ALWAYS populate alternatives with ≥ 2 plausible waseda/keio interpretations. Day 2 will replace this placeholder with real chiba-specific marks once samples are collected.",
   },
 ];
 
