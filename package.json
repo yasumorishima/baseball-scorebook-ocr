@@ -11,17 +11,31 @@
     "test:watch": "vitest",
     "test:wasm": "RUN_WASM_TESTS=1 vitest run tests/preprocess/hough-calibrate.test.ts",
     "smoke:hough": "node scripts/hough-smoke.cjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint:next": "next lint"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
+    "@serwist/next": "^9.0.11",
     "@techstark/opencv-js": "^4.12.0-release.1",
+    "dexie": "^4.0.11",
     "nanoid": "^5.0.9",
+    "next": "^15.1.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "serwist": "^9.0.11",
     "sharp": "^0.33.5",
+    "uuid": "^11.0.5",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/uuid": "^10.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.5.0",
     "vitest": "^2.1.4"

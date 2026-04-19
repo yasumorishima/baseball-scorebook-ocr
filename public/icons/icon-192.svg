@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="32" fill="#0f172a" />
+  <circle cx="96" cy="96" r="48" fill="#f8fafc" stroke="#dc2626" stroke-width="4" />
+  <path d="M64 80 Q 96 70 128 80" stroke="#dc2626" stroke-width="3" fill="none" />
+  <path d="M64 112 Q 96 122 128 112" stroke="#dc2626" stroke-width="3" fill="none" />
+  <text x="96" y="104" text-anchor="middle" font-size="36" font-family="sans-serif" font-weight="700" fill="#0f172a">SB</text>
+</svg>

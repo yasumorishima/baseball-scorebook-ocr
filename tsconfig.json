@@ -8,7 +8,30 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": false,
-    "noEmit": true
+    "noEmit": true,
+    "jsx": "preserve",
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "incremental": true,
+    "isolatedModules": true,
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./*"],
+      "@/app/*": ["./app/*"],
+      "@/client/*": ["./src/client/*"],
+      "@/pwa/*": ["./src/pwa/*"],
+      "@/src/*": ["./src/*"]
+    }
   },
-  "include": ["experiments/**/*.ts", "scripts/**/*.ts", "src/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "experiments/**/*.ts",
+    "scripts/**/*.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "next.config.ts",
+    "next-env.d.ts"
+  ],
+  "exclude": ["node_modules", ".next"]
 }
