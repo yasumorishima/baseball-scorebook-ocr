@@ -9,15 +9,23 @@ let cached = null;
 
 function loadOpenCV() {
   if (cached) return cached;
-  cached = new Promise(function (resolve) {
-    const cv = require("@techstark/opencv-js");
-    if (typeof cv.Mat === "function") {
-      resolve(cv);
-      return;
+  cached = new Promise(function (resolve, reject) {
+    try {
+      const cv = require("@techstark/opencv-js");
+      if (typeof cv.Mat === "function") {
+        resolve(cv);
+        return;
+      }
+      cv.onRuntimeInitialized = function () {
+        resolve(cv);
+      };
+    } catch (err) {
+      reject(err);
     }
-    cv.onRuntimeInitialized = function () {
-      resolve(cv);
-    };
+  });
+  // init に失敗した Promise をキャッシュから外し、次回呼び出しで再試行可能にする
+  cached.catch(function () {
+    cached = null;
   });
   return cached;
 }

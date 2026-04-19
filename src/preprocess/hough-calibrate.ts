@@ -129,6 +129,10 @@ export async function getOpenCV(): Promise<OpenCVRuntime> {
     };
     return mod.loadOpenCV();
   })();
+  // init に失敗した Promise をキャッシュから外し、次回呼び出しで再試行可能にする
+  cachedRuntime.catch(() => {
+    cachedRuntime = null;
+  });
   return cachedRuntime;
 }
 
