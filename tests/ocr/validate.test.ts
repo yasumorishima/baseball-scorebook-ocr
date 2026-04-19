@@ -296,7 +296,7 @@ describe("validateGrid", () => {
       expect(w?.message).toContain("reached_base=4");
     });
 
-    it("does NOT warn when reached_base=4 with stolen_bases evidence (rare self-advance)", () => {
+    it("does NOT warn when reached_base=4 with stolen_bases includes 4 (stolen home)", () => {
       const grid = makeGrid([
         cell(1, 1, "walk", 4, null, {
           extras: { ...EXTRAS, stolen_bases: [2, 3, 4] },
@@ -308,7 +308,21 @@ describe("validateGrid", () => {
       ).toBeUndefined();
     });
 
-    it("does NOT warn when reached_base=4 with wild_pitch / passed_ball evidence", () => {
+    it("DOES warn when reached_base=4 with stolen_bases=[2] only (cannot score just from stealing 2nd)", () => {
+      // sub-agent review: stolen_bases.length>0 guard was too loose.
+      // Stealing 2B alone never scores a run without subsequent events.
+      const grid = makeGrid([
+        cell(1, 1, "walk", 4, null, {
+          extras: { ...EXTRAS, stolen_bases: [2] },
+        }),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((w) => w.kind === "diamond_reached_base_mismatch"),
+      ).toBeDefined();
+    });
+
+    it("does NOT warn when reached_base=4 with wild_pitch evidence", () => {
       const grid = makeGrid([
         cell(1, 1, "walk", 4, null, {
           extras: { ...EXTRAS, wild_pitch: true },
@@ -320,6 +334,42 @@ describe("validateGrid", () => {
       ).toBeUndefined();
     });
 
+    it("does NOT warn when reached_base=4 with passed_ball evidence", () => {
+      const grid = makeGrid([
+        cell(1, 1, "walk", 4, null, {
+          extras: { ...EXTRAS, passed_ball: true },
+        }),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((w) => w.kind === "diamond_reached_base_mismatch"),
+      ).toBeUndefined();
+    });
+
+    it("does NOT warn when reached_base=4 with error_fielder recorded", () => {
+      const grid = makeGrid([
+        cell(1, 1, "walk", 4, null, {
+          extras: { ...EXTRAS, error_fielder: 6 },
+        }),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((w) => w.kind === "diamond_reached_base_mismatch"),
+      ).toBeUndefined();
+    });
+
+    it("DOES warn when reached_base=4 has a subsequent null-null blank cell only (blank does not count as subsequent PA)", () => {
+      // hasSubsequentFilledCellInInning: outcome=null AND raw_notation=null → not counted
+      const grid = makeGrid([
+        cell(1, 1, "walk", 4, null),
+        cell(2, 1, null, null, null, { raw_notation: null }),
+      ]);
+      const report = validateGrid(grid, { lastPlayedInning: 1 });
+      expect(
+        report.warnings.find((w) => w.kind === "diamond_reached_base_mismatch"),
+      ).toBeDefined();
+    });
+
     it("does NOT warn for triple with reached_base=3 (covered by rule #3, not this rule)", () => {
       const grid = makeGrid([cell(1, 1, "triple", 3, null)]);
       const report = validateGrid(grid, { lastPlayedInning: 1 });
@@ -328,16 +378,13 @@ describe("validateGrid", () => {
       ).toBeUndefined();
     });
 
-    it("warns for single reached_base=4 at the last filled position in an inning of many batters", () => {
-      // Batter 9 is the last one in inning 1; no one after them to drive them in.
+    it("warns when batter 8 single reached_base=4 in an unfinished inning with no subsequent PA", () => {
+      // 自然な true-positive: 8 番が単打で打席終了、9 番の打席記録なし、
+      // その状態で reached_base=4 は OCR 誤読の典型パターン。
       const grid = makeGrid(
         [
-          cell(1, 1, "ground_out", 0, 1),
-          cell(2, 1, "fly_out", 0, 2),
-          cell(3, 1, "strikeout_swinging", 0, 3),
-          // inning ended at batter 3 — batter 9's cell shouldn't even exist in inning 1,
-          // but if OCR misreads and puts reached_base=4 on batter 9, we should catch it.
-          cell(9, 1, "single", 4, null),
+          cell(8, 1, "single", 4, null),
+          // batter 9 has no cell; inning is still unfinished
         ],
         9,
         9,

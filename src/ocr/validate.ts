@@ -187,14 +187,20 @@ export function validateGrid(
   //   (a) outcome="home_run"（打者自身が本塁打で生還）
   //   (b) 同一イニング内に後続打席が少なくとも 1 つ存在
   //       （後続打者の安打・エラー等で生還 = ランナー advancement）
-  //   (c) extras に stolen_bases が記録されている（自身の盗塁で生還、稀）
+  //   (c) extras.stolen_bases に 4（= 本塁）が含まれる（自身の本盗で生還、稀）
   //   (d) extras.wild_pitch / passed_ball / error_fielder が記録されている
   //       （その打席中のプレイで生還する稀なケース）
   //
   // 上記いずれも無い場合、reached_base=4 は OCR 誤読の可能性が高い → warning。
   //
-  // Note: reached_base=1/2/3 は #3 (reached_base_outcome_mismatch) で網羅済。
-  // Day 2 で合計得点行 OCR が入ったら、runs_total_mismatch と合わせて error 昇格を検討。
+  // Scope note: HIT/OUT 系 outcome の reached_base 不整合は #3 で網羅済だが、
+  //   walk/hbp/error/fielders_choice の reached_base=1/2/3 不整合は現状
+  //   どのルールでも拾っていない（Day 2 で #3 拡張 or 別ルール追加を検討）。
+  //
+  // 将来の error 昇格条件: Day 2 で runs_total_mismatch (#5) と合算一致
+  //   (「そのイニングの得点=このイニングで reached_base=4 を持つセルの数」)
+  //   が取れたときのみ error 化。fail-closed で自動保存ブロックに直結するため
+  //   単独での error 昇格は避ける。
   for (let bi = 0; bi < batterCount; bi++) {
     for (let ii = 0; ii < inningCount; ii++) {
       const cell = grid[bi][ii];
@@ -210,7 +216,7 @@ export function validateGrid(
           violation(
             "diamond_reached_base_mismatch",
             "warning",
-            `cell (${cell.batting_order}, ${cell.inning}): reached_base=4 (scored) but outcome=${cell.outcome ?? "null"} and no subsequent at-bat in this inning could have driven the runner in. Possible diamond shading mis-read.`,
+            `cell (${cell.batting_order}, ${cell.inning}): reached_base=4 (scored) but outcome=${cell.outcome ?? "null"}, no subsequent at-bat in this inning, and no extras evidence (stolen_bases includes 4 / wild_pitch / passed_ball / error_fielder). Possible diamond shading mis-read.`,
             {
               inning: ii,
               cells: [{ batting_order: cell.batting_order, inning: cell.inning }],
@@ -450,16 +456,20 @@ function hasSubsequentFilledCellInInning(
 }
 
 /**
- * セルの extras に「打者自身の at-bat 中に生還しうる事象」が記録されているか。
- * - 盗塁（stolen_bases に 4 塁を含む、または 2〜3 塁を経由後の生還）
- * - 暴投 / 捕逸 / エラー（その打席中にランナーが advance）
+ * セルの extras に「打者自身の at-bat 中に本塁まで生還しうる事象」が記録されているか。
+ * - 盗塁（stolen_bases に 4 = 本塁を含む = 本盗のみ；2/3 塁盗塁では生還に至らない）
+ * - 暴投 / 捕逸（3 塁走者が生還する稀なパターン）
+ * - 野手エラー（その打席中にランナーが一気に本塁まで advance する稀なパターン）
  *
- * reached_base=4 が outcome=home_run 以外で成立する稀な経路を拾うための、
- * 過剰 warning を避ける目的の guard。
+ * reached_base=4 が outcome=home_run 以外で成立する稀な経路を拾うための guard。
+ * stolen_bases=[2] や [3] 単独で guard を true 化すると本塁まで生還しない盗塁でも
+ * ルールが素通りしてしまい、diamond 誤読を検出できない（sub-agent review 指摘）。
  */
 function cellHasRunScoringExtras(cell: CellRead): boolean {
   const e = cell.extras;
-  if (e.stolen_bases.length > 0) return true;
+  // 本盗（stolen of home）のみを生還とみなす。2/3 塁単独の盗塁は後続打席または
+  // WP/PB/E がないと本塁まで届かないので、guard にしない。
+  if (e.stolen_bases.includes(4)) return true;
   if (e.wild_pitch) return true;
   if (e.passed_ball) return true;
   if (e.error_fielder != null) return true;
