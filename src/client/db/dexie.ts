@@ -29,6 +29,13 @@ export type GameRow = {
   updatedAt: string;
 };
 
+/**
+ * Dexie 永続化上は `null` を採用し、`GameEventEnvelope` の
+ * `correctionOf?: string` / `ocrMetadata?: OcrMetadata` は sync layer で
+ * `undefined → null` に正規化して保存、読み出し時に `null → undefined` に
+ * 戻す。IndexedDB は `undefined` をインデックス上で無視するため、filter
+ * 挙動を一意にするために永続層では `null` 一本化が安全。
+ */
 export type GameEventRow = {
   id: string;
   gameId: string;
@@ -42,6 +49,12 @@ export type GameEventRow = {
   ocrMetadata: OcrMetadata | null;
 };
 
+/**
+ * アプリ層同期キュー。Serwist BackgroundSyncQueue が使えない Safari 等の
+ * フォールバック先であり、online イベント／起動時に flush する
+ * （docs/architecture.md §9.2）。`envelope` は Supabase 送信形に正規化
+ * 済み（null 正規化後）。
+ */
 export type PendingEventRow = {
   id: string;
   gameId: string;

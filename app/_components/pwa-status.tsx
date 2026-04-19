@@ -11,12 +11,15 @@ type Counts = {
 
 export function PwaStatus() {
   const [counts, setCounts] = useState<Counts | null>(null);
-  const [online, setOnline] = useState<boolean>(
-    typeof navigator === "undefined" ? true : navigator.onLine,
-  );
+  // SSR/ハイドレーション時の初期値は null。client hydration 後の
+  // useEffect で初めて実際の navigator.onLine を反映する。こうしないと
+  // サーバは常に true でレンダーし、クライアント初回描画で offline 表示に
+  // flip してハイドレーション不一致警告が出る。
+  const [online, setOnline] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setOnline(navigator.onLine);
     const update = () => setOnline(navigator.onLine);
     window.addEventListener("online", update);
     window.addEventListener("offline", update);
@@ -61,7 +64,9 @@ export function PwaStatus() {
       }}
     >
       <dt>ネットワーク</dt>
-      <dd style={{ margin: 0 }}>{online ? "オンライン" : "オフライン"}</dd>
+      <dd style={{ margin: 0 }}>
+        {online === null ? "判定中" : online ? "オンライン" : "オフライン"}
+      </dd>
 
       <dt>ローカル試合数</dt>
       <dd style={{ margin: 0 }}>{counts ? counts.games : "読み込み中"}</dd>
