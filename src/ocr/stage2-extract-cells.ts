@@ -25,14 +25,14 @@ import {
 } from "./client.js";
 import type { Style } from "../types/style.js";
 import {
+  buildChibaSystemPrompt,
   buildChibaUserText,
   CHIBA_EXTRACT_COLUMN_TOOL_NAME,
-  CHIBA_SYSTEM_PROMPT,
 } from "./prompts/chiba-system.js";
 import {
+  buildKeioSystemPrompt,
   buildKeioUserText,
   KEIO_EXTRACT_COLUMN_TOOL_NAME,
-  KEIO_SYSTEM_PROMPT,
 } from "./prompts/keio-system.js";
 import {
   buildWasedaSystemPrompt,
@@ -180,9 +180,9 @@ function selectSystemPrompt(style: Style): string {
     case "unknown":
       return buildWasedaSystemPrompt();
     case "keio":
-      return KEIO_SYSTEM_PROMPT;
+      return buildKeioSystemPrompt();
     case "chiba":
-      return CHIBA_SYSTEM_PROMPT;
+      return buildChibaSystemPrompt();
   }
 }
 
