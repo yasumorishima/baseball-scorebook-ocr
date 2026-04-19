@@ -114,12 +114,18 @@ let cachedRuntime: Promise<OpenCVRuntime> | null = null;
  *   - `@techstark/opencv-js` は UMD (`module.exports = factory()`) で配布される Emscripten
  *     module。ESM の `await import(...)` 経路では `default.then` が thenable と認識され、
  *     `await` が内部 `.then` を呼んでも Emscripten の init コールバックが発火せず
- *     deadlock する現象を確認（scripts/hough-probe*.ts 参照）。
+ *     deadlock する現象を確認（scripts/hough-smoke.cjs で比較済み）。
  *   - tsx / Vite / vitest は createRequire まで傍受して ESM 経路に再ルーティングするため
  *     TS ファイル内の createRequire も安定動作しない。
  *   - 解決策: `src/preprocess/opencv-loader.cjs` で require を隔離し、純 Node CJS 経路で
  *     Module を取得して onRuntimeInitialized で init 完了を待つ。`.cjs` 拡張子は
  *     Vite/tsx のトランスパイル対象外なので安定して動く。
+ *
+ * 検証環境 (2026-04-19):
+ *   - Node 22.x / tsx 4.x / vitest 2.1.x / @techstark/opencv-js 4.12.0
+ *   - 将来 opencv-js が ESM-first 配布に切り替わるか、vitest 3.x でトランスパイラ挙動が
+ *     変わった場合は `.cjs` 迂回が不要になる可能性あり。その際は probe script 同等の
+ *     手順で `await import("@techstark/opencv-js")` が deadlock しないことを再確認する。
  */
 export async function getOpenCV(): Promise<OpenCVRuntime> {
   if (cachedRuntime) return cachedRuntime;
