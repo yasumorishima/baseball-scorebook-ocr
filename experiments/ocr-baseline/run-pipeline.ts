@@ -20,7 +20,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import type { Style } from "../../src/types/style.js";
 import {
@@ -351,9 +351,18 @@ async function main(): Promise<void> {
 // ファイルを直接実行した時だけ main() を走らせる。
 // `import { parseApprovalFile } from "..."` のように test 等から import した際は
 // 副作用（process.exit / 標準入力の argv 解析）が発火しないようにガードする。
-// import.meta.url と process.argv[1] の正規化 URL が一致する場合のみエントリ実行。
-const entryUrl = new URL(`file://${resolve(process.argv[1] ?? "")}`).href;
-if (import.meta.url === entryUrl) {
+//
+// Windows では `import.meta.url` が `file:///C:/...`（3 スラッシュ）になる一方、
+// 手組みの `file://${resolve(...)}` は `file://C:/...`（2 スラッシュ）になり常に
+// 不一致。`pathToFileURL` で正規化された URL 同士を比較することで Linux/Windows
+// 双方で一貫して判定する。
+function isDirectExecution(): boolean {
+  if (!process.argv[1]) return false;
+  const entryHref = pathToFileURL(resolve(process.argv[1])).href;
+  return import.meta.url === entryHref;
+}
+
+if (isDirectExecution()) {
   main().catch((err) => {
     console.error("[run-pipeline] fatal:", err);
     process.exit(1);

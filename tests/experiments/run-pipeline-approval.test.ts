@@ -115,3 +115,31 @@ describe("UNLOCK_UNTIL expiry semantics (Date-level)", () => {
     expect(Number.isNaN(invalid.getTime())).toBe(true);
   });
 });
+
+describe("isDirectExecution platform-safe URL comparison (sanity)", () => {
+  // import.meta.url と pathToFileURL(resolve(argv[1])).href の比較が
+  // Linux/Windows 両方で一貫するよう pathToFileURL を使う設計の背景を記録。
+  //
+  // 以前の実装: `file://${resolve(...)}` を手組み → Windows で `file://C:/...` vs
+  // Node の `file:///C:/...` とスラッシュ数差で常に false になる事故経験あり。
+  it("pathToFileURL round-trip produces the canonical file:// URL form", async () => {
+    const { pathToFileURL, fileURLToPath } = await import("node:url");
+    const samplePath =
+      process.platform === "win32"
+        ? "C:\\Users\\test\\foo.ts"
+        : "/tmp/foo.ts";
+    const url = pathToFileURL(samplePath);
+    // ラウンドトリップで元パスに戻ること
+    expect(fileURLToPath(url)).toBe(
+      process.platform === "win32"
+        ? "C:\\Users\\test\\foo.ts"
+        : "/tmp/foo.ts",
+    );
+    // Windows 固有: `file:///C:/Users/test/foo.ts` が生成されることを確認
+    if (process.platform === "win32") {
+      expect(url.href.startsWith("file:///C:/")).toBe(true);
+    } else {
+      expect(url.href.startsWith("file:///")).toBe(true);
+    }
+  });
+});
